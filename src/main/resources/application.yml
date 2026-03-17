@@ -1,0 +1,27 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: campusfit-backend
+  profiles:
+    active: dev
+  jackson:
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:campusfit}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      initialization-fail-timeout: -1
+      connection-timeout: 60000
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+app:
+  name: CampusFit Backend
+  jwt:
+    user-secret: ${USER_JWT_SECRET:CampusFitUserSecretChangeMe1234567890}
+    user-expire-hours: ${USER_JWT_EXPIRE_HOURS:72}

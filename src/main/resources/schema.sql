@@ -1,0 +1,244 @@
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS report_record;
+DROP TABLE IF EXISTS message_notification;
+DROP TABLE IF EXISTS commission_record;
+DROP TABLE IF EXISTS creator_cooperation;
+DROP TABLE IF EXISTS promotion_slot;
+DROP TABLE IF EXISTS campaign;
+DROP TABLE IF EXISTS merchant;
+DROP TABLE IF EXISTS post_comment;
+DROP TABLE IF EXISTS post_like;
+DROP TABLE IF EXISTS post_favorite;
+DROP TABLE IF EXISTS user_follow;
+DROP TABLE IF EXISTS product_link;
+DROP TABLE IF EXISTS post_tag;
+DROP TABLE IF EXISTS post_image;
+DROP TABLE IF EXISTS post;
+DROP TABLE IF EXISTS tag_option;
+DROP TABLE IF EXISTS user_profile;
+DROP TABLE IF EXISTS sys_admin_user;
+DROP TABLE IF EXISTS app_user;
+SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE app_user (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    nickname VARCHAR(50) NOT NULL,
+    avatar_url VARCHAR(255),
+    status TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_profile (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    school_name VARCHAR(100),
+    grade_name VARCHAR(50),
+    signature VARCHAR(255),
+    avatar_text VARCHAR(10),
+    avatar_class VARCHAR(20),
+    like_count INT NOT NULL DEFAULT 0,
+    follower_count INT NOT NULL DEFAULT 0,
+    following_count INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user_profile_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE tag_option (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    category VARCHAR(30) NOT NULL,
+    option_value VARCHAR(50) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    status TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tag_option (category, option_value)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_code VARCHAR(32) UNIQUE,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    subtitle VARCHAR(160),
+    description TEXT,
+    scene_tag VARCHAR(50),
+    style_tag VARCHAR(50),
+    budget_tag VARCHAR(50),
+    cover_tag VARCHAR(50),
+    cover_image_url VARCHAR(255),
+    status TINYINT NOT NULL DEFAULT 1,
+    audit_status TINYINT NOT NULL DEFAULT 1,
+    like_count INT NOT NULL DEFAULT 0,
+    comment_count INT NOT NULL DEFAULT 0,
+    favorite_count INT NOT NULL DEFAULT 0,
+    share_count INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_post_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_image (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    image_url VARCHAR(255) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_post_image_post FOREIGN KEY (post_id) REFERENCES post(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_tag (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    tag_type VARCHAR(30) NOT NULL,
+    tag_value VARCHAR(50) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_post_tag_post FOREIGN KEY (post_id) REFERENCES post(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE product_link (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    product_name VARCHAR(120) NOT NULL,
+    platform_name VARCHAR(50) NOT NULL,
+    product_url VARCHAR(500) NOT NULL,
+    link_status TINYINT NOT NULL DEFAULT 1,
+    is_partner_product TINYINT NOT NULL DEFAULT 0,
+    commission_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    price_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    profit_label VARCHAR(120),
+    guide_tip VARCHAR(255),
+    last_checked_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_product_link_post FOREIGN KEY (post_id) REFERENCES post(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_follow (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    follower_user_id BIGINT NOT NULL,
+    followee_user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_follow (follower_user_id, followee_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_like (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_post_like (post_id, user_id),
+    CONSTRAINT fk_post_like_post FOREIGN KEY (post_id) REFERENCES post(id),
+    CONSTRAINT fk_post_like_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_favorite (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_post_favorite (post_id, user_id),
+    CONSTRAINT fk_post_favorite_post FOREIGN KEY (post_id) REFERENCES post(id),
+    CONSTRAINT fk_post_favorite_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_comment (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    content VARCHAR(500) NOT NULL,
+    like_count INT NOT NULL DEFAULT 0,
+    status TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_post_comment_post FOREIGN KEY (post_id) REFERENCES post(id),
+    CONSTRAINT fk_post_comment_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE merchant (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    merchant_name VARCHAR(120) NOT NULL,
+    contact_name VARCHAR(50),
+    contact_phone VARCHAR(30),
+    cooperation_status TINYINT NOT NULL DEFAULT 0,
+    remark VARCHAR(255),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE promotion_slot (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    slot_name VARCHAR(120) NOT NULL,
+    slot_position VARCHAR(50) NOT NULL,
+    merchant_id BIGINT,
+    start_time DATETIME,
+    end_time DATETIME,
+    status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_promotion_slot_merchant FOREIGN KEY (merchant_id) REFERENCES merchant(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE campaign (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    campaign_name VARCHAR(120) NOT NULL,
+    campaign_type VARCHAR(50) NOT NULL,
+    merchant_id BIGINT,
+    start_time DATETIME,
+    end_time DATETIME,
+    status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_campaign_merchant FOREIGN KEY (merchant_id) REFERENCES merchant(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE creator_cooperation (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    merchant_id BIGINT NOT NULL,
+    cooperation_title VARCHAR(120) NOT NULL,
+    cooperation_status TINYINT NOT NULL DEFAULT 0,
+    reward_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_creator_cooperation_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+    CONSTRAINT fk_creator_cooperation_merchant FOREIGN KEY (merchant_id) REFERENCES merchant(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE commission_record (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    income_type VARCHAR(50) NOT NULL,
+    commission_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    settlement_status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_commission_record_post FOREIGN KEY (post_id) REFERENCES post(id),
+    CONSTRAINT fk_commission_record_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE message_notification (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    message_type VARCHAR(50) NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    content VARCHAR(500) NOT NULL,
+    read_status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_message_notification_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE report_record (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    reporter_user_id BIGINT NOT NULL,
+    target_type VARCHAR(30) NOT NULL,
+    target_id BIGINT NOT NULL,
+    reason VARCHAR(255) NOT NULL,
+    process_status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_report_record_user FOREIGN KEY (reporter_user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE sys_admin_user (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role_code VARCHAR(50) NOT NULL,
+    status TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
