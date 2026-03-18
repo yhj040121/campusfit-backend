@@ -1,5 +1,6 @@
 package com.campusfit.modules.message.service.impl;
 
+import com.campusfit.common.exception.BusinessException;
 import com.campusfit.modules.auth.support.UserAuthContext;
 import com.campusfit.modules.message.service.MessageService;
 import com.campusfit.modules.message.vo.MessageItemVO;
@@ -24,7 +25,7 @@ public class MessageServiceImpl implements MessageService {
     public List<MessageItemVO> listMessages() {
         long currentUserId = UserAuthContext.requireUserId();
         String sql = """
-            select id, message_type, title, content, created_at
+            select id, message_type, title, content, read_status, created_at
             from message_notification
             where user_id = ?
             order by created_at desc, id desc
@@ -34,26 +35,56 @@ public class MessageServiceImpl implements MessageService {
             rs.getString("message_type"),
             rs.getString("title"),
             rs.getString("content"),
-            formatRelativeTime(rs.getTimestamp("created_at"))
+            formatRelativeTime(rs.getTimestamp("created_at")),
+            rs.getInt("read_status") == 1
         ), currentUserId);
+    }
+
+    @Override
+    public boolean markRead(String messageId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        long id = parseMessageId(messageId);
+        int updated = jdbcTemplate.update(
+            "update message_notification set read_status = 1 where id = ? and user_id = ? and read_status = 0",
+            id,
+            currentUserId
+        );
+        return updated > 0;
+    }
+
+    @Override
+    public int markAllRead() {
+        long currentUserId = UserAuthContext.requireUserId();
+        return jdbcTemplate.update(
+            "update message_notification set read_status = 1 where user_id = ? and read_status = 0",
+            currentUserId
+        );
+    }
+
+    private long parseMessageId(String messageId) {
+        try {
+            return Long.parseLong(messageId);
+        } catch (NumberFormatException exception) {
+            throw new BusinessException("?????");
+        }
     }
 
     private String formatRelativeTime(Timestamp createdAt) {
         if (createdAt == null) {
-            return "Just now";
+            return "??";
         }
         Duration duration = Duration.between(createdAt.toLocalDateTime(), LocalDateTime.now());
         if (duration.isNegative() || duration.toMinutes() <= 0) {
-            return "Just now";
+            return "??";
         }
         if (duration.toMinutes() < 60) {
-            return duration.toMinutes() + " min ago";
+            return duration.toMinutes() + " ???";
         }
         if (duration.toHours() < 24) {
-            return duration.toHours() + " h ago";
+            return duration.toHours() + " ???";
         }
         if (duration.toDays() < 7) {
-            return duration.toDays() + " d ago";
+            return duration.toDays() + " ??";
         }
         return createdAt.toLocalDateTime().toLocalDate().toString();
     }

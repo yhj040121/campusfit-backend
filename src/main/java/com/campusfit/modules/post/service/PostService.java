@@ -19,11 +19,13 @@ public interface PostService {
 
     List<PostCardVO> listFavorites();
 
-    List<PostCardVO> search(String keyword);
+    List<PostCardVO> search(String keyword, String scene, String style, String budget);
 
     PostDetailVO getDetail(String postId);
 
     PostCreateResultVO create(PostCreateRequest request);
+
+    void deleteMine(String postId);
 
     List<PostCommentVO> listComments(String postId);
 

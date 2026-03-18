@@ -47,8 +47,13 @@ public class PostController {
     }
 
     @GetMapping("/search")
-    public ApiResponse<List<PostCardVO>> search(@RequestParam(defaultValue = "") String keyword) {
-        return ApiResponse.success(postService.search(keyword));
+    public ApiResponse<List<PostCardVO>> search(
+        @RequestParam(defaultValue = "") String keyword,
+        @RequestParam(defaultValue = "") String scene,
+        @RequestParam(defaultValue = "") String style,
+        @RequestParam(defaultValue = "") String budget
+    ) {
+        return ApiResponse.success(postService.search(keyword, scene, style, budget));
     }
 
     @GetMapping("/{postId}")
@@ -58,7 +63,13 @@ public class PostController {
 
     @PostMapping
     public ApiResponse<PostCreateResultVO> create(@Valid @RequestBody PostCreateRequest request) {
-        return ApiResponse.success("Post created", postService.create(request));
+        return ApiResponse.success("????", postService.create(request));
+    }
+
+    @PostMapping("/{postId}/delete")
+    public ApiResponse<Boolean> delete(@PathVariable String postId) {
+        postService.deleteMine(postId);
+        return ApiResponse.success("????", true);
     }
 
     @GetMapping("/{postId}/comments")
@@ -68,7 +79,7 @@ public class PostController {
 
     @PostMapping("/{postId}/comments")
     public ApiResponse<PostCommentVO> createComment(@PathVariable String postId, @Valid @RequestBody PostCommentCreateRequest request) {
-        return ApiResponse.success("Comment created", postService.createComment(postId, request));
+        return ApiResponse.success("????", postService.createComment(postId, request));
     }
 
     @GetMapping("/{postId}/likes")

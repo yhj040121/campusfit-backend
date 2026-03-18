@@ -26,6 +26,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -98,35 +99,53 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
-    public List<PostCardVO> search(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
+    public List<PostCardVO> search(String keyword, String scene, String style, String budget) {
+        boolean hasKeyword = keyword != null && !keyword.isBlank();
+        boolean hasScene = scene != null && !scene.isBlank();
+        boolean hasStyle = style != null && !style.isBlank();
+        boolean hasBudget = budget != null && !budget.isBlank();
+        if (!hasKeyword && !hasScene && !hasStyle && !hasBudget) {
             return listRecommendations();
         }
-        String likeKeyword = "%" + keyword.trim() + "%";
-        String sql = CARD_SELECT + """
-             where p.status = 1
-               and p.audit_status = 1
-               and (
-                    p.title like ?
-                 or p.subtitle like ?
-                 or p.description like ?
-                 or p.scene_tag like ?
-                 or p.style_tag like ?
-                 or p.budget_tag like ?
-                 or u.nickname like ?
-                 or coalesce(pl.product_name, '') like ?
-               )
-             order by p.created_at desc, p.id desc
-            """;
-        return jdbcTemplate.query(
-            sql,
-            this::mapPostCard,
-            likeKeyword, likeKeyword, likeKeyword, likeKeyword,
-            likeKeyword, likeKeyword, likeKeyword, likeKeyword
-        );
+        List<Object> params = new ArrayList<>();
+        StringBuilder sql = new StringBuilder(CARD_SELECT);
+        sql.append(" where p.status = 1 and p.audit_status = 1");
+
+        if (hasKeyword) {
+            String likeKeyword = "%" + keyword.trim() + "%";
+            sql.append("""
+                 and (
+                      p.title like ?
+                   or p.subtitle like ?
+                   or p.description like ?
+                   or p.scene_tag like ?
+                   or p.style_tag like ?
+                   or p.budget_tag like ?
+                   or u.nickname like ?
+                   or coalesce(pl.product_name, '') like ?
+                 )
+                """);
+            for (int i = 0; i < 8; i += 1) {
+                params.add(likeKeyword);
+            }
+        }
+        if (hasScene) {
+            sql.append(" and p.scene_tag = ?");
+            params.add(scene.trim());
+        }
+        if (hasStyle) {
+            sql.append(" and p.style_tag = ?");
+            params.add(style.trim());
+        }
+        if (hasBudget) {
+            sql.append(" and p.budget_tag = ?");
+            params.add(budget.trim());
+        }
+        sql.append(" order by p.created_at desc, p.id desc");
+        return jdbcTemplate.query(sql.toString(), this::mapPostCard, params.toArray());
     }
 
-    @Override
+@Override
     public PostDetailVO getDetail(String postId) {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
@@ -295,10 +314,22 @@ public class PostServiceImpl implements PostService {
             "你的穿搭《" + request.title() + "》已加入内容管理列表。"
         );
 
-        return new PostCreateResultVO(postCode, "CREATED", "发布成功");
+        return new PostCreateResultVO(postCode, "CREATED", "????");
     }
 
     @Override
+    @Transactional
+    public void deleteMine(String postId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        if (meta.authorUserId() != currentUserId) {
+            throw new BusinessException("???????????");
+        }
+        jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
+        jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
+    }
+
+@Override
     public List<PostCommentVO> listComments(String postId) {
         PostMeta meta = resolvePostMeta(postId);
         String sql = """

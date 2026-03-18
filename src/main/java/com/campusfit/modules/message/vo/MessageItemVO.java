@@ -1,4 +1,3 @@
-
 package com.campusfit.modules.message.vo;
 
 public record MessageItemVO(
@@ -6,6 +5,7 @@ public record MessageItemVO(
     String type,
     String title,
     String desc,
-    String time
+    String time,
+    boolean read
 ) {
 }
