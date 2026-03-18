@@ -278,9 +278,9 @@ public class PostServiceImpl implements PostService {
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
-            "????",
-            "???????",
-            "?????" + request.title() + "???????????"
+            "\u7cfb\u7edf\u901a\u77e5",
+            "\u4f60\u7684\u7a7f\u642d\u5df2\u53d1\u5e03",
+            "\u4f60\u7684\u7a7f\u642d\u300a" + request.title() + "\u300b\u5df2\u52a0\u5165\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
         );
 
         return new PostCreateResultVO(postCode, "CREATED", "发布成功");
@@ -355,9 +355,9 @@ public class PostServiceImpl implements PostService {
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
-            "????",
-            "???????",
-            "?????" + request.title() + "???????"
+            "\u7cfb\u7edf\u901a\u77e5",
+            "\u4f60\u7684\u7a7f\u642d\u5df2\u66f4\u65b0",
+            "\u4f60\u7684\u7a7f\u642d\u300a" + request.title() + "\u300b\u5df2\u66f4\u65b0\u5e76\u540c\u6b65\u5230\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
         );
 
         return new PostCreateResultVO(postId, "UPDATED", "更新成功");
@@ -377,10 +377,13 @@ public class PostServiceImpl implements PostService {
 
 @Override
     public List<PostCommentVO> listComments(String postId) {
+        Long currentUserId = UserAuthContext.getCurrentUserId();
+        long viewerUserId = currentUserId == null ? -1L : currentUserId;
         PostMeta meta = resolvePostMeta(postId);
         String sql = """
             select
                 c.id,
+                c.user_id,
                 c.content,
                 c.like_count,
                 c.created_at,
@@ -393,7 +396,7 @@ public class PostServiceImpl implements PostService {
             where c.post_id = ? and c.status = 1
             order by c.created_at desc, c.id desc
             """;
-        return jdbcTemplate.query(sql, this::mapComment, meta.id());
+        return jdbcTemplate.query(sql, (rs, rowNum) -> mapComment(rs, rowNum, viewerUserId), meta.id());
     }
 
     @Override
@@ -424,6 +427,43 @@ public class PostServiceImpl implements PostService {
         }
         Long commentId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
         return buildCurrentUserComment(commentId, request.content(), currentUserId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteComment(String postId, String commentId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        long targetCommentId = parseCommentId(commentId);
+        Long ownerUserId = jdbcTemplate.query(
+            """
+            select user_id
+            from post_comment
+            where id = ? and post_id = ? and status = 1
+            """,
+            rs -> rs.next() ? rs.getLong("user_id") : null,
+            targetCommentId,
+            meta.id()
+        );
+        if (ownerUserId == null) {
+            throw new BusinessException("评论不存在或已被删除");
+        }
+        if (ownerUserId != currentUserId) {
+            throw new BusinessException("只能删除自己发表的评论");
+        }
+        int affected = jdbcTemplate.update(
+            "update post_comment set status = 0 where id = ? and post_id = ? and user_id = ? and status = 1",
+            targetCommentId,
+            meta.id(),
+            currentUserId
+        );
+        if (affected <= 0) {
+            throw new BusinessException("评论删除失败");
+        }
+        jdbcTemplate.update(
+            "update post set comment_count = case when comment_count > 0 then comment_count - 1 else 0 end where id = ?",
+            meta.id()
+        );
     }
 
     @Override
@@ -537,7 +577,7 @@ public class PostServiceImpl implements PostService {
         );
     }
 
-    private PostCommentVO mapComment(ResultSet rs, int rowNum) throws SQLException {
+    private PostCommentVO mapComment(ResultSet rs, int rowNum, long viewerUserId) throws SQLException {
         return new PostCommentVO(
             String.valueOf(rs.getLong("id")),
             rs.getString("nickname"),
@@ -545,7 +585,8 @@ public class PostServiceImpl implements PostService {
             coalesce(rs.getString("avatar_class"), ""),
             rs.getString("content"),
             formatRelativeTime(rs.getTimestamp("created_at")),
-            rs.getInt("like_count")
+            rs.getInt("like_count"),
+            rs.getLong("user_id") == viewerUserId
         );
     }
 
@@ -575,11 +616,20 @@ public class PostServiceImpl implements PostService {
                 coalesce(rs.getString("avatar_text"), "C"),
                 coalesce(rs.getString("avatar_class"), "soft"),
                 content,
-                "刚刚",
-                0
+                "\u521a\u521a",
+                0,
+                true
             ),
             currentUserId
         );
+    }
+
+    private long parseCommentId(String commentId) {
+        try {
+            return Long.parseLong(commentId);
+        } catch (NumberFormatException exception) {
+            throw new BusinessException("\u8bc4\u8bba\u7f16\u53f7\u65e0\u6548");
+        }
     }
 
     private List<String> findImageUrls(long postId) {

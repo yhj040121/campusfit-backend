@@ -41,6 +41,17 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
+    public int countUnread() {
+        long currentUserId = UserAuthContext.requireUserId();
+        Integer count = jdbcTemplate.queryForObject(
+            "select count(*) from message_notification where user_id = ? and read_status = 0",
+            Integer.class,
+            currentUserId
+        );
+        return count == null ? 0 : count;
+    }
+
+    @Override
     public boolean markRead(String messageId) {
         long currentUserId = UserAuthContext.requireUserId();
         long id = parseMessageId(messageId);
@@ -65,26 +76,26 @@ public class MessageServiceImpl implements MessageService {
         try {
             return Long.parseLong(messageId);
         } catch (NumberFormatException exception) {
-            throw new BusinessException("?????");
+            throw new BusinessException("\u6d88\u606f\u7f16\u53f7\u65e0\u6548");
         }
     }
 
     private String formatRelativeTime(Timestamp createdAt) {
         if (createdAt == null) {
-            return "??";
+            return "\u521a\u521a";
         }
         Duration duration = Duration.between(createdAt.toLocalDateTime(), LocalDateTime.now());
         if (duration.isNegative() || duration.toMinutes() <= 0) {
-            return "??";
+            return "\u521a\u521a";
         }
         if (duration.toMinutes() < 60) {
-            return duration.toMinutes() + " ???";
+            return duration.toMinutes() + " \u5206\u949f\u524d";
         }
         if (duration.toHours() < 24) {
-            return duration.toHours() + " ???";
+            return duration.toHours() + " \u5c0f\u65f6\u524d";
         }
         if (duration.toDays() < 7) {
-            return duration.toDays() + " ??";
+            return duration.toDays() + " \u5929\u524d";
         }
         return createdAt.toLocalDateTime().toLocalDate().toString();
     }

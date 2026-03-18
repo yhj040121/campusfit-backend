@@ -26,13 +26,18 @@ public class MessageController {
         return ApiResponse.success(messageService.listMessages());
     }
 
+    @GetMapping("/unread-count")
+    public ApiResponse<Integer> unreadCount() {
+        return ApiResponse.success(messageService.countUnread());
+    }
+
     @PostMapping("/{messageId}/read")
     public ApiResponse<Boolean> markRead(@PathVariable String messageId) {
-        return ApiResponse.success("????", messageService.markRead(messageId));
+        return ApiResponse.success("\u5df2\u6807\u8bb0\u4e3a\u5df2\u8bfb", messageService.markRead(messageId));
     }
 
     @PostMapping("/read-all")
     public ApiResponse<Integer> markAllRead() {
-        return ApiResponse.success("????????", messageService.markAllRead());
+        return ApiResponse.success("\u5df2\u5b8c\u6210\u5168\u90e8\u5df2\u8bfb", messageService.markAllRead());
     }
 }

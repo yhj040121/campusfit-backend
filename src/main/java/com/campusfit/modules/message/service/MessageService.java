@@ -8,6 +8,8 @@ public interface MessageService {
 
     List<MessageItemVO> listMessages();
 
+    int countUnread();
+
     boolean markRead(String messageId);
 
     int markAllRead();

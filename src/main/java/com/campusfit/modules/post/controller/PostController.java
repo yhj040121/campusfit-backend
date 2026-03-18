@@ -94,7 +94,13 @@ public class PostController {
         return ApiResponse.success("评论成功", postService.createComment(postId, request));
     }
 
-    @GetMapping("/{postId}/likes")
+        @PostMapping("/{postId}/comments/{commentId}/delete")
+    public ApiResponse<Boolean> deleteComment(@PathVariable String postId, @PathVariable String commentId) {
+        postService.deleteComment(postId, commentId);
+        return ApiResponse.success("\u8bc4\u8bba\u5df2\u5220\u9664", true);
+    }
+
+@GetMapping("/{postId}/likes")
     public ApiResponse<List<UserCardVO>> likes(@PathVariable String postId) {
         return ApiResponse.success(postService.listLikeUsers(postId));
     }

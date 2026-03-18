@@ -7,6 +7,7 @@ public record PostCommentVO(
     String avatarClass,
     String text,
     String time,
-    int likes
+    int likes,
+    boolean mine
 ) {
 }
