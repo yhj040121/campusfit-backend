@@ -10,6 +10,7 @@ import com.campusfit.modules.post.vo.PostCardVO;
 import com.campusfit.modules.post.vo.PostCommentVO;
 import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
+import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -231,11 +232,11 @@ public class PostServiceImpl implements PostService {
         Set<String> styleOptions = loadTagValues("style");
         Set<String> budgetOptions = loadTagValues("budget");
 
-        String sceneTag = pickTag(request.tags(), sceneOptions, "校园");
-        String styleTag = pickTag(request.tags(), styleOptions, "极简");
+        String sceneTag = pickTag(request.tags(), sceneOptions, "??");
+        String styleTag = pickTag(request.tags(), styleOptions, "??");
         String budgetTag = pickTag(request.tags(), budgetOptions, "100-150");
         String subtitle = buildSubtitle(request.desc());
-        String coverTag = sceneTag + "精选";
+        String coverTag = sceneTag + "??";
         String coverImageUrl = request.imageUrls() == null || request.imageUrls().isEmpty() ? null : request.imageUrls().get(0);
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -270,51 +271,96 @@ public class PostServiceImpl implements PostService {
         String postCode = "look" + postId;
         jdbcTemplate.update("update post set post_code = ? where id = ?", postCode, postId);
 
-        if (request.imageUrls() != null) {
-            for (int i = 0; i < request.imageUrls().size(); i += 1) {
-                jdbcTemplate.update(
-                    "insert into post_image (post_id, image_url, sort_order, created_at) values (?, ?, ?, now())",
-                    postId,
-                    request.imageUrls().get(i),
-                    i + 1
-                );
-            }
-        }
-
-        for (String tag : new LinkedHashSet<>(request.tags())) {
-            jdbcTemplate.update(
-                "insert into post_tag (post_id, tag_type, tag_value, created_at) values (?, ?, ?, now())",
-                postId,
-                resolveTagType(tag, sceneOptions, styleOptions, budgetOptions),
-                tag
-            );
-        }
-
-        jdbcTemplate.update(
-            """
-            insert into product_link (
-                post_id, product_name, platform_name, product_url, link_status,
-                is_partner_product, commission_rate, price_amount, profit_label, guide_tip, last_checked_at, created_at
-            ) values (?, ?, ?, ?, 1, 0, 5.00, ?, ?, ?, now(), now())
-            """,
-            postId,
-            request.title(),
-            detectPlatform(request.productLink()),
-            request.productLink(),
-            estimatePrice(budgetTag),
-            "审核通过后开启佣金统计",
-            "请根据自身实际需求理性下单。"
-        );
+        syncPostImages(postId, request.imageUrls());
+        syncPostTags(postId, request.tags(), sceneOptions, styleOptions, budgetOptions);
+        upsertProductLink(postId, request.title(), request.productLink(), budgetTag);
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
-            "系统通知",
-            "你的穿搭已发布",
-            "你的穿搭《" + request.title() + "》已加入内容管理列表。"
+            "????",
+            "???????",
+            "?????" + request.title() + "???????????"
         );
 
-        return new PostCreateResultVO(postCode, "CREATED", "????");
+        return new PostCreateResultVO(postCode, "CREATED", "发布成功");
+    }
+
+    @Override
+    public PostEditVO getMineForEdit(String postId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        if (meta.authorUserId() != currentUserId) {
+            throw new BusinessException("只能编辑自己发布的穿搭");
+        }
+        String sql = """
+            select p.post_code, p.title, p.description, coalesce(pl.product_url, '') as product_url
+            from post p
+            left join product_link pl on pl.post_id = p.id
+            where p.id = ?
+            limit 1
+            """;
+        return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new PostEditVO(
+            rs.getString("post_code"),
+            rs.getString("title"),
+            coalesce(rs.getString("description"), ""),
+            findImageUrls(meta.id()),
+            findTags(meta.id()),
+            coalesce(rs.getString("product_url"), "")
+        ), meta.id());
+    }
+
+    @Override
+    @Transactional
+    public PostCreateResultVO updateMine(String postId, PostCreateRequest request) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        if (meta.authorUserId() != currentUserId) {
+            throw new BusinessException("只能编辑自己发布的穿搭");
+        }
+
+        Set<String> sceneOptions = loadTagValues("scene");
+        Set<String> styleOptions = loadTagValues("style");
+        Set<String> budgetOptions = loadTagValues("budget");
+
+        String sceneTag = pickTag(request.tags(), sceneOptions, "??");
+        String styleTag = pickTag(request.tags(), styleOptions, "??");
+        String budgetTag = pickTag(request.tags(), budgetOptions, "100-150");
+        String subtitle = buildSubtitle(request.desc());
+        String coverTag = sceneTag + "??";
+        String coverImageUrl = request.imageUrls() == null || request.imageUrls().isEmpty() ? null : request.imageUrls().get(0);
+
+        jdbcTemplate.update(
+            """
+            update post
+            set title = ?, subtitle = ?, description = ?, scene_tag = ?, style_tag = ?, budget_tag = ?,
+                cover_tag = ?, cover_image_url = ?, updated_at = now()
+            where id = ?
+            """,
+            request.title(),
+            subtitle,
+            request.desc(),
+            sceneTag,
+            styleTag,
+            budgetTag,
+            coverTag,
+            coverImageUrl,
+            meta.id()
+        );
+
+        syncPostImages(meta.id(), request.imageUrls());
+        syncPostTags(meta.id(), request.tags(), sceneOptions, styleOptions, budgetOptions);
+        upsertProductLink(meta.id(), request.title(), request.productLink(), budgetTag);
+
+        jdbcTemplate.update(
+            "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
+            currentUserId,
+            "????",
+            "???????",
+            "?????" + request.title() + "???????"
+        );
+
+        return new PostCreateResultVO(postId, "UPDATED", "更新成功");
     }
 
     @Override
@@ -323,7 +369,7 @@ public class PostServiceImpl implements PostService {
         long currentUserId = UserAuthContext.requireUserId();
         PostMeta meta = resolvePostMeta(postId);
         if (meta.authorUserId() != currentUserId) {
-            throw new BusinessException("???????????");
+            throw new BusinessException("只能删除自己发布的穿搭");
         }
         jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
         jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
@@ -533,6 +579,93 @@ public class PostServiceImpl implements PostService {
                 0
             ),
             currentUserId
+        );
+    }
+
+    private List<String> findImageUrls(long postId) {
+        return jdbcTemplate.queryForList(
+            "select image_url from post_image where post_id = ? order by sort_order asc, id asc",
+            String.class,
+            postId
+        );
+    }
+
+    private List<String> findTags(long postId) {
+        return jdbcTemplate.queryForList(
+            "select tag_value from post_tag where post_id = ? order by id asc",
+            String.class,
+            postId
+        );
+    }
+
+    private void syncPostImages(long postId, List<String> imageUrls) {
+        jdbcTemplate.update("delete from post_image where post_id = ?", postId);
+        if (imageUrls == null) {
+            return;
+        }
+        for (int i = 0; i < imageUrls.size(); i += 1) {
+            jdbcTemplate.update(
+                "insert into post_image (post_id, image_url, sort_order, created_at) values (?, ?, ?, now())",
+                postId,
+                imageUrls.get(i),
+                i + 1
+            );
+        }
+    }
+
+    private void syncPostTags(long postId, List<String> tags, Set<String> sceneOptions, Set<String> styleOptions, Set<String> budgetOptions) {
+        jdbcTemplate.update("delete from post_tag where post_id = ?", postId);
+        if (tags == null) {
+            return;
+        }
+        for (String tag : new LinkedHashSet<>(tags)) {
+            jdbcTemplate.update(
+                "insert into post_tag (post_id, tag_type, tag_value, created_at) values (?, ?, ?, now())",
+                postId,
+                resolveTagType(tag, sceneOptions, styleOptions, budgetOptions),
+                tag
+            );
+        }
+    }
+
+    private void upsertProductLink(long postId, String productName, String productLink, String budgetTag) {
+        Integer exists = jdbcTemplate.queryForObject(
+            "select count(*) from product_link where post_id = ?",
+            Integer.class,
+            postId
+        );
+        if (exists != null && exists > 0) {
+            jdbcTemplate.update(
+                """
+                update product_link
+                set product_name = ?, platform_name = ?, product_url = ?, link_status = 1,
+                    price_amount = ?, profit_label = ?, guide_tip = ?, last_checked_at = now()
+                where post_id = ?
+                """,
+                productName,
+                detectPlatform(productLink),
+                productLink,
+                estimatePrice(budgetTag),
+                "?????????",
+                "??????????????",
+                postId
+            );
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            insert into product_link (
+                post_id, product_name, platform_name, product_url, link_status,
+                is_partner_product, commission_rate, price_amount, profit_label, guide_tip, last_checked_at, created_at
+            ) values (?, ?, ?, ?, 1, 0, 5.00, ?, ?, ?, now(), now())
+            """,
+            postId,
+            productName,
+            detectPlatform(productLink),
+            productLink,
+            estimatePrice(budgetTag),
+            "???????????",
+            "??????????????"
         );
     }
 

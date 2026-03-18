@@ -9,11 +9,13 @@ import com.campusfit.modules.post.vo.PostCardVO;
 import com.campusfit.modules.post.vo.PostCommentVO;
 import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
+import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -61,15 +63,25 @@ public class PostController {
         return ApiResponse.success(postService.getDetail(postId));
     }
 
+    @GetMapping("/{postId}/edit")
+    public ApiResponse<PostEditVO> editInfo(@PathVariable String postId) {
+        return ApiResponse.success(postService.getMineForEdit(postId));
+    }
+
     @PostMapping
     public ApiResponse<PostCreateResultVO> create(@Valid @RequestBody PostCreateRequest request) {
-        return ApiResponse.success("????", postService.create(request));
+        return ApiResponse.success("发布成功", postService.create(request));
+    }
+
+    @PutMapping("/{postId}")
+    public ApiResponse<PostCreateResultVO> update(@PathVariable String postId, @Valid @RequestBody PostCreateRequest request) {
+        return ApiResponse.success("更新成功", postService.updateMine(postId, request));
     }
 
     @PostMapping("/{postId}/delete")
     public ApiResponse<Boolean> delete(@PathVariable String postId) {
         postService.deleteMine(postId);
-        return ApiResponse.success("????", true);
+        return ApiResponse.success("删除成功", true);
     }
 
     @GetMapping("/{postId}/comments")
@@ -79,7 +91,7 @@ public class PostController {
 
     @PostMapping("/{postId}/comments")
     public ApiResponse<PostCommentVO> createComment(@PathVariable String postId, @Valid @RequestBody PostCommentCreateRequest request) {
-        return ApiResponse.success("????", postService.createComment(postId, request));
+        return ApiResponse.success("评论成功", postService.createComment(postId, request));
     }
 
     @GetMapping("/{postId}/likes")

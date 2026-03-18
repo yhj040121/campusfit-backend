@@ -7,6 +7,7 @@ import com.campusfit.modules.post.vo.PostCardVO;
 import com.campusfit.modules.post.vo.PostCommentVO;
 import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
+import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
 
 import java.util.List;
@@ -23,7 +24,11 @@ public interface PostService {
 
     PostDetailVO getDetail(String postId);
 
+    PostEditVO getMineForEdit(String postId);
+
     PostCreateResultVO create(PostCreateRequest request);
+
+    PostCreateResultVO updateMine(String postId, PostCreateRequest request);
 
     void deleteMine(String postId);
 
