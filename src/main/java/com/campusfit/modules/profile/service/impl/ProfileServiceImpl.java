@@ -4,11 +4,15 @@ import com.campusfit.common.exception.BusinessException;
 import com.campusfit.common.vo.UserCardVO;
 import com.campusfit.modules.auth.service.UserAuthService;
 import com.campusfit.modules.auth.support.UserAuthContext;
+import com.campusfit.modules.profile.dto.IncentiveWithdrawRequest;
 import com.campusfit.modules.profile.dto.ProfileUpdateRequest;
 import com.campusfit.modules.profile.service.ProfileService;
 import com.campusfit.modules.profile.vo.FollowToggleVO;
 import com.campusfit.modules.profile.vo.ProfileEditVO;
+import com.campusfit.modules.profile.vo.ProfileIncentiveCenterVO;
+import com.campusfit.modules.profile.vo.ProfileIncentiveRecordVO;
 import com.campusfit.modules.profile.vo.ProfileSummaryVO;
+import com.campusfit.modules.profile.vo.ProfileWithdrawRequestVO;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,10 +22,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class ProfileServiceImpl implements ProfileService {
+
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final JdbcTemplate jdbcTemplate;
     private final UserAuthService userAuthService;
@@ -136,6 +144,153 @@ public class ProfileServiceImpl implements ProfileService {
 
         userAuthService.refreshNickname(currentUserId, nickname);
         return getCurrentProfile();
+    }
+
+    @Override
+    public ProfileIncentiveCenterVO getCurrentIncentiveCenter() {
+        long currentUserId = UserAuthContext.requireUserId();
+        IncentiveTotals incentiveTotals = jdbcTemplate.queryForObject("""
+            select
+                coalesce(sum(cr.commission_amount), 0) as total_amount,
+                coalesce(sum(case when cr.settlement_status = 1 then cr.commission_amount else 0 end), 0) as settled_amount,
+                coalesce(sum(case when cr.settlement_status = 0 then cr.commission_amount else 0 end), 0) as pending_settlement_amount,
+                coalesce(sum(case when cr.settlement_status = 1 then 1 else 0 end), 0) as settled_count,
+                coalesce(sum(case when cr.settlement_status = 0 then 1 else 0 end), 0) as pending_count
+            from commission_record cr
+            where cr.user_id = ?
+            """, (rs, rowNum) -> new IncentiveTotals(
+            safeAmount(rs.getBigDecimal("total_amount")),
+            safeAmount(rs.getBigDecimal("settled_amount")),
+            safeAmount(rs.getBigDecimal("pending_settlement_amount")),
+            rs.getInt("settled_count"),
+            rs.getInt("pending_count")
+        ), currentUserId);
+        WithdrawTotals withdrawTotals = queryWithdrawTotals(currentUserId);
+        BigDecimal availableAmount = incentiveTotals.settledAmount()
+            .subtract(withdrawTotals.pendingAmount())
+            .subtract(withdrawTotals.withdrawnAmount())
+            .max(BigDecimal.ZERO)
+            .setScale(2, RoundingMode.HALF_UP);
+        List<ProfileIncentiveRecordVO> settlementRecords = jdbcTemplate.query("""
+            select
+                cr.id,
+                cr.post_id,
+                coalesce(p.title, '校园内容') as post_title,
+                cr.income_type,
+                cr.commission_amount,
+                cr.settlement_status,
+                cr.created_at
+            from commission_record cr
+            left join post p on p.id = cr.post_id
+            where cr.user_id = ?
+            order by cr.created_at desc, cr.id desc
+            limit 20
+            """, (rs, rowNum) -> new ProfileIncentiveRecordVO(
+            rs.getLong("id"),
+            rs.getLong("post_id"),
+            rs.getString("post_title"),
+            normalizeSettlementType(rs.getString("income_type")),
+            formatCurrency(rs.getBigDecimal("commission_amount")),
+            rs.getInt("settlement_status") == 1 ? "已结算" : "待结算",
+            rs.getInt("settlement_status"),
+            formatDateTime(rs.getTimestamp("created_at"))
+        ), currentUserId);
+        List<ProfileWithdrawRequestVO> withdrawRequests = jdbcTemplate.query("""
+            select
+                cwr.id,
+                cwr.request_amount,
+                cwr.request_status,
+                cwr.created_at,
+                cwr.processed_at,
+                cwr.remark
+            from creator_withdraw_request cwr
+            where cwr.user_id = ?
+            order by cwr.created_at desc, cwr.id desc
+            limit 10
+            """, (rs, rowNum) -> new ProfileWithdrawRequestVO(
+            rs.getLong("id"),
+            formatCurrency(rs.getBigDecimal("request_amount")),
+            mapWithdrawStatus(rs.getInt("request_status")),
+            rs.getInt("request_status"),
+            formatDateTime(rs.getTimestamp("created_at")),
+            formatDateTime(rs.getTimestamp("processed_at")),
+            coalesce(rs.getString("remark"), "平台处理中")
+        ), currentUserId);
+        return new ProfileIncentiveCenterVO(
+            formatCurrency(incentiveTotals.totalAmount()),
+            formatCurrency(availableAmount),
+            availableAmount.toPlainString(),
+            formatCurrency(incentiveTotals.pendingSettlementAmount()),
+            formatCurrency(withdrawTotals.pendingAmount()),
+            formatCurrency(withdrawTotals.withdrawnAmount()),
+            incentiveTotals.settledCount(),
+            incentiveTotals.pendingCount(),
+            availableAmount.compareTo(BigDecimal.ZERO) > 0,
+            availableAmount.compareTo(BigDecimal.ZERO) > 0
+                ? "已结算的创作激励可以申请提现，平台审核后会线下打款并同步状态。"
+                : "当前暂无可提现余额，待结算记录在月结算完成后会自动转入可提现。",
+            settlementRecords,
+            withdrawRequests
+        );
+    }
+
+    @Override
+    @Transactional
+    public ProfileWithdrawRequestVO applyWithdraw(IncentiveWithdrawRequest request) {
+        long currentUserId = UserAuthContext.requireUserId();
+        WithdrawTotals withdrawTotals = queryWithdrawTotals(currentUserId);
+        BigDecimal settledAmount = jdbcTemplate.queryForObject("""
+            select coalesce(sum(cr.commission_amount), 0)
+            from commission_record cr
+            where cr.user_id = ? and cr.settlement_status = 1
+            """, BigDecimal.class, currentUserId);
+        BigDecimal availableAmount = safeAmount(settledAmount)
+            .subtract(withdrawTotals.pendingAmount())
+            .subtract(withdrawTotals.withdrawnAmount())
+            .max(BigDecimal.ZERO)
+            .setScale(2, RoundingMode.HALF_UP);
+        if (availableAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("当前暂无可提现余额");
+        }
+        BigDecimal requestAmount = request == null || request.amount() == null
+            ? availableAmount
+            : request.amount().setScale(2, RoundingMode.HALF_UP);
+        if (requestAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("提现金额必须大于 0");
+        }
+        if (requestAmount.compareTo(availableAmount) > 0) {
+            throw new BusinessException("提现金额不能超过可提现余额");
+        }
+        jdbcTemplate.update("""
+            insert into creator_withdraw_request (user_id, request_amount, request_status, created_at, processed_at, remark)
+            values (?, ?, 0, now(), null, ?)
+            """, currentUserId, requestAmount, "已提交申请，等待平台审核");
+        jdbcTemplate.update("""
+            insert into message_notification (user_id, message_type, title, content, read_status, created_at)
+            values (?, ?, ?, ?, 0, now())
+            """, currentUserId, "激励通知", "提现申请已提交",
+            "你已提交 " + formatCurrency(requestAmount) + " 的创作激励提现申请，平台审核后会同步进度。");
+        return jdbcTemplate.queryForObject("""
+            select
+                cwr.id,
+                cwr.request_amount,
+                cwr.request_status,
+                cwr.created_at,
+                cwr.processed_at,
+                cwr.remark
+            from creator_withdraw_request cwr
+            where cwr.user_id = ?
+            order by cwr.id desc
+            limit 1
+            """, (rs, rowNum) -> new ProfileWithdrawRequestVO(
+            rs.getLong("id"),
+            formatCurrency(rs.getBigDecimal("request_amount")),
+            mapWithdrawStatus(rs.getInt("request_status")),
+            rs.getInt("request_status"),
+            formatDateTime(rs.getTimestamp("created_at")),
+            formatDateTime(rs.getTimestamp("processed_at")),
+            coalesce(rs.getString("remark"), "平台处理中")
+        ), currentUserId);
     }
 
     @Override
@@ -254,8 +409,51 @@ public class ProfileServiceImpl implements ProfileService {
     }
 
     private String formatCurrency(BigDecimal amount) {
-        BigDecimal safeAmount = amount == null ? BigDecimal.ZERO : amount;
-        return "￥" + safeAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        BigDecimal safeAmount = safeAmount(amount);
+        return "¥" + safeAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String formatDateTime(Timestamp timestamp) {
+        if (timestamp == null) {
+            return "-";
+        }
+        return timestamp.toLocalDateTime().format(DATE_TIME_FORMATTER);
+    }
+
+    private BigDecimal safeAmount(BigDecimal amount) {
+        return amount == null ? BigDecimal.ZERO : amount;
+    }
+
+    private String normalizeSettlementType(String type) {
+        if (type == null || type.isBlank()) {
+            return "创作激励";
+        }
+        return switch (type) {
+            case "导购佣金", "导购收益", "推广佣金" -> "推广激励";
+            case "品牌分成", "合作分成" -> "品牌合作奖励";
+            default -> type;
+        };
+    }
+
+    private String mapWithdrawStatus(int status) {
+        return switch (status) {
+            case 1 -> "已打款";
+            case 2 -> "已驳回";
+            default -> "审核中";
+        };
+    }
+
+    private WithdrawTotals queryWithdrawTotals(long currentUserId) {
+        return jdbcTemplate.queryForObject("""
+            select
+                coalesce(sum(case when cwr.request_status = 0 then cwr.request_amount else 0 end), 0) as pending_amount,
+                coalesce(sum(case when cwr.request_status = 1 then cwr.request_amount else 0 end), 0) as withdrawn_amount
+            from creator_withdraw_request cwr
+            where cwr.user_id = ?
+            """, (rs, rowNum) -> new WithdrawTotals(
+            safeAmount(rs.getBigDecimal("pending_amount")),
+            safeAmount(rs.getBigDecimal("withdrawn_amount"))
+        ), currentUserId);
     }
 
     private String normalize(String value) {
@@ -268,5 +466,20 @@ public class ProfileServiceImpl implements ProfileService {
 
     private String coalesce(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private record IncentiveTotals(
+        BigDecimal totalAmount,
+        BigDecimal settledAmount,
+        BigDecimal pendingSettlementAmount,
+        int settledCount,
+        int pendingCount
+    ) {
+    }
+
+    private record WithdrawTotals(
+        BigDecimal pendingAmount,
+        BigDecimal withdrawnAmount
+    ) {
     }
 }

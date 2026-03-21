@@ -2,11 +2,14 @@ package com.campusfit.modules.profile.controller;
 
 import com.campusfit.common.api.ApiResponse;
 import com.campusfit.common.vo.UserCardVO;
+import com.campusfit.modules.profile.dto.IncentiveWithdrawRequest;
 import com.campusfit.modules.profile.dto.ProfileUpdateRequest;
 import com.campusfit.modules.profile.service.ProfileService;
 import com.campusfit.modules.profile.vo.FollowToggleVO;
 import com.campusfit.modules.profile.vo.ProfileEditVO;
+import com.campusfit.modules.profile.vo.ProfileIncentiveCenterVO;
 import com.campusfit.modules.profile.vo.ProfileSummaryVO;
+import com.campusfit.modules.profile.vo.ProfileWithdrawRequestVO;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,6 +45,16 @@ public class ProfileController {
     @PutMapping("/me")
     public ApiResponse<ProfileSummaryVO> update(@Valid @RequestBody ProfileUpdateRequest request) {
         return ApiResponse.success("Profile updated", profileService.updateCurrentProfile(request));
+    }
+
+    @GetMapping("/incentives")
+    public ApiResponse<ProfileIncentiveCenterVO> incentives() {
+        return ApiResponse.success(profileService.getCurrentIncentiveCenter());
+    }
+
+    @PostMapping("/incentives/withdraw")
+    public ApiResponse<ProfileWithdrawRequestVO> applyWithdraw(@Valid @RequestBody(required = false) IncentiveWithdrawRequest request) {
+        return ApiResponse.success("Withdraw request submitted", profileService.applyWithdraw(request));
     }
 
     @GetMapping("/follows")

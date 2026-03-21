@@ -27,7 +27,7 @@ public class AdminAuthController {
 
     @PostMapping("/login")
     public ApiResponse<AdminLoginVO> login(@Valid @RequestBody AdminLoginRequest request) {
-        return ApiResponse.success("Login success", adminAuthService.login(request));
+        return ApiResponse.success("登录成功", adminAuthService.login(request));
     }
 
     @GetMapping("/me")
@@ -39,7 +39,7 @@ public class AdminAuthController {
     public ApiResponse<Void> logout(HttpServletRequest request) {
         AdminSession session = currentSession(request);
         adminAuthService.logout(session.token());
-        return ApiResponse.success("Logout success", null);
+        return ApiResponse.success("已退出登录", null);
     }
 
     private AdminSession currentSession(HttpServletRequest request) {

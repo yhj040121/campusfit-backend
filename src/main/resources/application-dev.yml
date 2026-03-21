@@ -10,3 +10,12 @@ app:
   env: dev
   cors:
     allowed-origins: '*'
+
+aliyun:
+  oss:
+    endpoint: https://oss-cn-hangzhou.aliyuncs.com
+    region: cn-hangzhou
+    bucket: campusfit
+    public-base-url: https://campusfit.oss-cn-hangzhou.aliyuncs.com
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}

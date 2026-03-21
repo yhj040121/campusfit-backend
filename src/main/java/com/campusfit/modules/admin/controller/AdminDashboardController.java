@@ -10,6 +10,7 @@ import com.campusfit.modules.admin.vo.AdminDashboardSummaryVO;
 import com.campusfit.modules.admin.vo.AdminMerchantItemVO;
 import com.campusfit.modules.admin.vo.AdminSettlementItemVO;
 import com.campusfit.modules.admin.vo.AdminUserItemVO;
+import com.campusfit.modules.admin.vo.AdminWithdrawRequestItemVO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -94,6 +95,26 @@ public class AdminDashboardController {
         adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "FINANCE");
         adminDashboardService.settleCommission(recordId);
         return ApiResponse.success("Settlement confirmed", null);
+    }
+
+    @GetMapping("/withdraw-requests")
+    public ApiResponse<List<AdminWithdrawRequestItemVO>> withdrawRequests(HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "FINANCE");
+        return ApiResponse.success(adminDashboardService.listWithdrawRequests());
+    }
+
+    @PostMapping("/withdraw-requests/{requestId}/approve")
+    public ApiResponse<Void> approveWithdrawRequest(@PathVariable Long requestId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "FINANCE");
+        adminDashboardService.approveWithdrawRequest(requestId);
+        return ApiResponse.success("Withdraw request approved", null);
+    }
+
+    @PostMapping("/withdraw-requests/{requestId}/reject")
+    public ApiResponse<Void> rejectWithdrawRequest(@PathVariable Long requestId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "FINANCE");
+        adminDashboardService.rejectWithdrawRequest(requestId);
+        return ApiResponse.success("Withdraw request rejected", null);
     }
 
     private AdminSession currentSession(HttpServletRequest request) {

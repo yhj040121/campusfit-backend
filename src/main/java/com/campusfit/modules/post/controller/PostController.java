@@ -11,6 +11,7 @@ import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
 import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
+import com.campusfit.modules.post.vo.PostProductJumpVO;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,6 +64,16 @@ public class PostController {
         return ApiResponse.success(postService.getDetail(postId));
     }
 
+    @GetMapping("/{postId}/product-jump")
+    public ApiResponse<PostProductJumpVO> productJump(@PathVariable String postId) {
+        return ApiResponse.success(postService.getProductJumpInfo(postId));
+    }
+
+    @PostMapping("/{postId}/product-jump/track")
+    public ApiResponse<PostProductJumpVO> trackProductJump(@PathVariable String postId) {
+        return ApiResponse.success("导购跳转已记录", postService.trackProductJump(postId));
+    }
+
     @GetMapping("/{postId}/edit")
     public ApiResponse<PostEditVO> editInfo(@PathVariable String postId) {
         return ApiResponse.success(postService.getMineForEdit(postId));
@@ -84,6 +95,18 @@ public class PostController {
         return ApiResponse.success("删除成功", true);
     }
 
+    @PostMapping("/{postId}/shelf-down")
+    public ApiResponse<Boolean> shelfDown(@PathVariable String postId) {
+        postService.shelfDownMine(postId);
+        return ApiResponse.success("下架成功", true);
+    }
+
+    @PostMapping("/{postId}/restore")
+    public ApiResponse<Boolean> restore(@PathVariable String postId) {
+        postService.restoreMine(postId);
+        return ApiResponse.success("重新上架成功", true);
+    }
+
     @GetMapping("/{postId}/comments")
     public ApiResponse<List<PostCommentVO>> comments(@PathVariable String postId) {
         return ApiResponse.success(postService.listComments(postId));
@@ -94,13 +117,13 @@ public class PostController {
         return ApiResponse.success("评论成功", postService.createComment(postId, request));
     }
 
-        @PostMapping("/{postId}/comments/{commentId}/delete")
+    @PostMapping("/{postId}/comments/{commentId}/delete")
     public ApiResponse<Boolean> deleteComment(@PathVariable String postId, @PathVariable String commentId) {
         postService.deleteComment(postId, commentId);
-        return ApiResponse.success("\u8bc4\u8bba\u5df2\u5220\u9664", true);
+        return ApiResponse.success("评论已删除", true);
     }
 
-@GetMapping("/{postId}/likes")
+    @GetMapping("/{postId}/likes")
     public ApiResponse<List<UserCardVO>> likes(@PathVariable String postId) {
         return ApiResponse.success(postService.listLikeUsers(postId));
     }

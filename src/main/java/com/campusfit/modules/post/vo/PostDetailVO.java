@@ -1,5 +1,7 @@
 package com.campusfit.modules.post.vo;
 
+import com.campusfit.modules.activity.vo.ActivityItemVO;
+
 import java.util.List;
 
 public record PostDetailVO(
@@ -8,6 +10,8 @@ public record PostDetailVO(
     String title,
     String subtitle,
     String desc,
+    String coverImageUrl,
+    List<String> imageUrls,
     Long authorId,
     String user,
     String avatar,
@@ -29,6 +33,7 @@ public record PostDetailVO(
     String platform,
     String profit,
     String guideTip,
+    ActivityItemVO activity,
     List<String> highlights,
     List<String> commentsPreview
 ) {

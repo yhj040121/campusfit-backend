@@ -6,6 +6,7 @@ public record PostCardVO(
     String title,
     String subtitle,
     String desc,
+    String coverImageUrl,
     String user,
     String avatar,
     String avatarClass,
@@ -21,6 +22,12 @@ public record PostCardVO(
     String product,
     String platform,
     String profit,
-    String guideTip
+    String guideTip,
+    String publishStatus,
+    String publishStatusText,
+    String publishStatusDesc,
+    boolean canViewDetail,
+    boolean canShelfDown,
+    boolean canRestore
 ) {
 }

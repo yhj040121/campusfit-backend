@@ -39,14 +39,14 @@ public class AdminAuthServiceImpl implements AdminAuthService {
             request.username()
         );
         if (records.isEmpty()) {
-            throw new BusinessException("Invalid username or password");
+            throw new BusinessException("账号或密码错误");
         }
         AdminAccountRecord account = records.get(0);
         if (account.status() != 1) {
-            throw new BusinessException("Admin account is disabled");
+            throw new BusinessException("管理员账号已停用");
         }
         if (!account.passwordHash().equals(request.password())) {
-            throw new BusinessException("Invalid username or password");
+            throw new BusinessException("账号或密码错误");
         }
         String token = UUID.randomUUID().toString().replace("-", "");
         AdminSession session = new AdminSession(
@@ -63,7 +63,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     @Override
     public AdminProfileVO getProfile(AdminSession session) {
         if (session == null) {
-            throw new BusinessException("Admin is not logged in");
+            throw new BusinessException("管理员未登录");
         }
         return new AdminProfileVO(session.username(), session.roleCode(), session.displayName());
     }
@@ -86,23 +86,23 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     @Override
     public void requireAnyRole(AdminSession session, String... roleCodes) {
         if (session == null) {
-            throw new BusinessException("Admin is not logged in");
+            throw new BusinessException("管理员未登录");
         }
         if (roleCodes == null || roleCodes.length == 0) {
             return;
         }
         boolean matched = Arrays.stream(roleCodes).anyMatch(role -> role.equalsIgnoreCase(session.roleCode()));
         if (!matched) {
-            throw new BusinessException("You do not have permission to access this page");
+            throw new BusinessException("你没有权限访问当前页面");
         }
     }
 
     private String buildDisplayName(String username, String roleCode) {
         return switch (roleCode) {
-            case "SUPER_ADMIN" -> "Super Admin - " + username;
-            case "CONTENT_OPERATOR" -> "Content Operator - " + username;
-            case "FINANCE" -> "Finance - " + username;
-            default -> "Admin - " + username;
+            case "SUPER_ADMIN" -> "超级管理员 - " + username;
+            case "CONTENT_OPERATOR" -> "内容运营 - " + username;
+            case "FINANCE" -> "财务人员 - " + username;
+            default -> "管理员 - " + username;
         };
     }
 

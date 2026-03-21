@@ -7,8 +7,10 @@ import com.campusfit.modules.admin.vo.AdminDashboardSummaryVO;
 import com.campusfit.modules.admin.vo.AdminMerchantItemVO;
 import com.campusfit.modules.admin.vo.AdminSettlementItemVO;
 import com.campusfit.modules.admin.vo.AdminUserItemVO;
+import com.campusfit.modules.admin.vo.AdminWithdrawRequestItemVO;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,7 +35,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             select
                 (select count(*) from app_user where date(created_at) = current_date()) as today_users,
                 (select count(*) from post where audit_status = 0) as pending_audits,
-                (select coalesce(sum(favorite_count + share_count), 0) from post where status = 1 and audit_status = 1) as product_clicks,
+                (select count(*) from product_link_click) as product_clicks,
                 (select coalesce(sum(commission_amount), 0) from commission_record where settlement_status = 0) as estimated_commission,
                 (select count(*) from campaign where status = 1) as active_campaigns
             """;
@@ -96,7 +98,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 rs.getString("title"),
                 rs.getString("nickname"),
                 rs.getString("scene_tag"),
-                linkStatus == 1 ? "Verified" : "Pending",
+                linkStatus == 1 ? "已校验" : "待校验",
                 mapAuditStatus(auditStatus),
                 auditStatus,
                 formatDateTime(rs.getTimestamp("created_at"))
@@ -112,7 +114,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 m.merchant_name,
                 coalesce(m.contact_name, '-') as contact_name,
                 coalesce((select count(*) from campaign c where c.merchant_id = m.id), 0) as campaign_count,
-                case when m.cooperation_status = 1 then 'Cooperating' else 'Lead' end as cooperation_status
+                case when m.cooperation_status = 1 then '合作中' else '意向商家' end as cooperation_status
             from merchant m
             order by m.id asc
             """;
@@ -144,9 +146,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             return new AdminSettlementItemVO(
                 rs.getLong("id"),
                 rs.getString("nickname"),
-                rs.getString("income_type"),
+                normalizeSettlementType(rs.getString("income_type")),
                 scaleAmount(rs.getBigDecimal("commission_amount")),
-                settlementStatus == 1 ? "Settled" : "Pending",
+                settlementStatus == 1 ? "已结算" : "待结算",
                 settlementStatus,
                 formatDateTime(rs.getTimestamp("created_at"))
             );
@@ -154,28 +156,99 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     @Override
+    public List<AdminWithdrawRequestItemVO> listWithdrawRequests() {
+        String sql = """
+            select
+                cwr.id,
+                u.nickname,
+                cwr.request_amount,
+                cwr.request_status,
+                cwr.created_at,
+                cwr.processed_at,
+                cwr.remark
+            from creator_withdraw_request cwr
+            join app_user u on u.id = cwr.user_id
+            order by case when cwr.request_status = 0 then 0 else 1 end, cwr.created_at desc, cwr.id desc
+            """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new AdminWithdrawRequestItemVO(
+            rs.getLong("id"),
+            rs.getString("nickname"),
+            scaleAmount(rs.getBigDecimal("request_amount")),
+            mapWithdrawStatus(rs.getInt("request_status")),
+            rs.getInt("request_status"),
+            formatDateTime(rs.getTimestamp("created_at")),
+            formatDateTime(rs.getTimestamp("processed_at")),
+            coalesce(rs.getString("remark"), rs.getInt("request_status") == 0 ? "等待财务审核" : "-")
+        ));
+    }
+
+    @Override
     public void freezeUser(Long userId) {
-        requireAffected(jdbcTemplate.update("update app_user set status = 0 where id = ?", userId), "User not found");
+        requireAffected(jdbcTemplate.update("update app_user set status = 0 where id = ?", userId), "用户不存在");
     }
 
     @Override
     public void unfreezeUser(Long userId) {
-        requireAffected(jdbcTemplate.update("update app_user set status = 1 where id = ?", userId), "User not found");
+        requireAffected(jdbcTemplate.update("update app_user set status = 1 where id = ?", userId), "用户不存在");
     }
 
     @Override
     public void approvePost(Long postId) {
-        requireAffected(jdbcTemplate.update("update post set audit_status = 1, status = 1 where id = ?", postId), "Post not found");
+        requireAffected(jdbcTemplate.update("update post set audit_status = 1, status = 1 where id = ?", postId), "内容不存在");
     }
 
     @Override
     public void rejectPost(Long postId) {
-        requireAffected(jdbcTemplate.update("update post set audit_status = 2, status = 0 where id = ?", postId), "Post not found");
+        requireAffected(jdbcTemplate.update("update post set audit_status = 2, status = 0 where id = ?", postId), "内容不存在");
     }
 
     @Override
     public void settleCommission(Long recordId) {
-        requireAffected(jdbcTemplate.update("update commission_record set settlement_status = 1 where id = ?", recordId), "Settlement record not found");
+        requireAffected(jdbcTemplate.update("update commission_record set settlement_status = 1 where id = ?", recordId), "结算记录不存在");
+    }
+
+    @Override
+    @Transactional
+    public void approveWithdrawRequest(Long requestId) {
+        WithdrawRequestSnapshot request = requirePendingWithdrawRequest(requestId);
+        String remark = "财务已确认打款，请提醒创作者查收。";
+        requireAffected(
+            jdbcTemplate.update(
+                "update creator_withdraw_request set request_status = 1, processed_at = now(), remark = ? where id = ? and request_status = 0",
+                remark,
+                requestId
+            ),
+            "提现申请不存在或已处理"
+        );
+        jdbcTemplate.update(
+            "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
+            request.userId(),
+            "激励通知",
+            "提现申请已通过",
+            "你的 " + formatCurrency(request.amount()) + " 创作激励提现申请已通过，平台已安排打款，请注意查收。"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void rejectWithdrawRequest(Long requestId) {
+        WithdrawRequestSnapshot request = requirePendingWithdrawRequest(requestId);
+        String remark = "平台已驳回本次提现申请，请核对收款信息后重新提交。";
+        requireAffected(
+            jdbcTemplate.update(
+                "update creator_withdraw_request set request_status = 2, processed_at = now(), remark = ? where id = ? and request_status = 0",
+                remark,
+                requestId
+            ),
+            "提现申请不存在或已处理"
+        );
+        jdbcTemplate.update(
+            "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
+            request.userId(),
+            "激励通知",
+            "提现申请未通过",
+            "你的 " + formatCurrency(request.amount()) + " 创作激励提现申请未通过，请核对收款信息后重新提交。"
+        );
     }
 
     private void requireAffected(int affectedRows, String message) {
@@ -186,23 +259,23 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     private String joinSchool(String schoolName, String gradeName) {
         if (schoolName == null || schoolName.isBlank()) {
-            return gradeName == null || gradeName.isBlank() ? "Campus User" : gradeName;
+            return gradeName == null || gradeName.isBlank() ? "校园用户" : gradeName;
         }
         if (gradeName == null || gradeName.isBlank()) {
             return schoolName;
         }
-        return schoolName + " - " + gradeName;
+        return schoolName + " / " + gradeName;
     }
 
     private String mapUserStatus(int status) {
-        return status == 1 ? "Active" : "Frozen";
+        return status == 1 ? "正常" : "已冻结";
     }
 
     private String mapAuditStatus(int auditStatus) {
         return switch (auditStatus) {
-            case 1 -> "Approved";
-            case 2 -> "Rejected";
-            default -> "Pending";
+            case 1 -> "已通过";
+            case 2 -> "已驳回";
+            default -> "待审核";
         };
     }
 
@@ -218,5 +291,63 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
         return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String formatCurrency(BigDecimal amount) {
+        return "¥" + scaleAmount(amount).toPlainString();
+    }
+
+    private String normalizeSettlementType(String type) {
+        if (type == null || type.isBlank()) {
+            return "创作激励";
+        }
+        return switch (type) {
+            case "导购佣金", "导购收益", "推广佣金" -> "推广激励";
+            case "品牌分成", "合作分成" -> "品牌合作奖励";
+            default -> type;
+        };
+    }
+
+    private String mapWithdrawStatus(int status) {
+        return switch (status) {
+            case 1 -> "已打款";
+            case 2 -> "已驳回";
+            default -> "审核中";
+        };
+    }
+
+    private WithdrawRequestSnapshot requirePendingWithdrawRequest(Long requestId) {
+        WithdrawRequestSnapshot request = jdbcTemplate.query("""
+            select id, user_id, request_amount, request_status
+            from creator_withdraw_request
+            where id = ?
+            limit 1
+            """, rs -> rs.next()
+            ? new WithdrawRequestSnapshot(
+                rs.getLong("id"),
+                rs.getLong("user_id"),
+                scaleAmount(rs.getBigDecimal("request_amount")),
+                rs.getInt("request_status")
+            )
+            : null, requestId);
+        if (request == null) {
+            throw new BusinessException("提现申请不存在");
+        }
+        if (request.statusCode() != 0) {
+            throw new BusinessException("该提现申请已处理");
+        }
+        return request;
+    }
+
+    private String coalesce(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private record WithdrawRequestSnapshot(
+        Long requestId,
+        Long userId,
+        BigDecimal amount,
+        int statusCode
+    ) {
     }
 }

@@ -7,15 +7,17 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record PostCreateRequest(
-    @NotBlank(message = "Title is required")
+    @NotBlank(message = "标题不能为空")
     String title,
-    @NotBlank(message = "Description is required")
+    @NotBlank(message = "描述不能为空")
     String desc,
-    @Size(max = 9, message = "You can upload up to 9 images")
+    @NotEmpty(message = "请至少上传 1 张图片")
+    @Size(max = 9, message = "图片最多 9 张")
     List<String> imageUrls,
-    @NotEmpty(message = "Please select at least one tag")
+    @NotEmpty(message = "请至少选择一个标签")
     List<String> tags,
-    @NotBlank(message = "Product link is required")
-    String productLink
+    @NotBlank(message = "商品链接不能为空")
+    String productLink,
+    String activityId
 ) {
 }

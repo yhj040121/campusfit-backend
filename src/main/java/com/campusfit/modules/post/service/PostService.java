@@ -9,6 +9,7 @@ import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
 import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
+import com.campusfit.modules.post.vo.PostProductJumpVO;
 
 import java.util.List;
 
@@ -24,6 +25,10 @@ public interface PostService {
 
     PostDetailVO getDetail(String postId);
 
+    PostProductJumpVO getProductJumpInfo(String postId);
+
+    PostProductJumpVO trackProductJump(String postId);
+
     PostEditVO getMineForEdit(String postId);
 
     PostCreateResultVO create(PostCreateRequest request);
@@ -31,6 +36,10 @@ public interface PostService {
     PostCreateResultVO updateMine(String postId, PostCreateRequest request);
 
     void deleteMine(String postId);
+
+    void shelfDownMine(String postId);
+
+    void restoreMine(String postId);
 
     List<PostCommentVO> listComments(String postId);
 

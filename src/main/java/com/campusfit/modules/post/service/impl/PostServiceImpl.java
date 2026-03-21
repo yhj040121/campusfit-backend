@@ -2,6 +2,7 @@ package com.campusfit.modules.post.service.impl;
 
 import com.campusfit.common.exception.BusinessException;
 import com.campusfit.common.vo.UserCardVO;
+import com.campusfit.modules.activity.service.ActivityService;
 import com.campusfit.modules.auth.support.UserAuthContext;
 import com.campusfit.modules.post.dto.PostCommentCreateRequest;
 import com.campusfit.modules.post.dto.PostCreateRequest;
@@ -12,6 +13,7 @@ import com.campusfit.modules.post.vo.PostCreateResultVO;
 import com.campusfit.modules.post.vo.PostDetailVO;
 import com.campusfit.modules.post.vo.PostEditVO;
 import com.campusfit.modules.post.vo.PostInteractionVO;
+import com.campusfit.modules.post.vo.PostProductJumpVO;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -28,6 +30,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -35,6 +38,10 @@ import java.util.Set;
 
 @Service
 public class PostServiceImpl implements PostService {
+
+    private static final String DEFAULT_INCENTIVE_TIP = "商家推广费会按平台规则拆分为服务费和激励池，创作者激励主要参考互动、质量与合规表现。";
+    private static final String DEFAULT_GUIDE_TIP = "请结合预算、使用频率和场景需求理性选购。";
+    private static final String DEFAULT_CLICK_TIP = "本次跳转会记录为导购点击，并与点赞、评论、收藏一起影响内容传播分析和后续创作激励。";
 
     private static final String CARD_SELECT = """
         select
@@ -45,6 +52,9 @@ public class PostServiceImpl implements PostService {
             p.subtitle,
             p.description,
             p.cover_tag,
+            p.cover_image_url,
+            p.status,
+            p.audit_status,
             p.scene_tag,
             p.style_tag,
             p.budget_tag,
@@ -70,9 +80,11 @@ public class PostServiceImpl implements PostService {
         """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final ActivityService activityService;
 
-    public PostServiceImpl(JdbcTemplate jdbcTemplate) {
+    public PostServiceImpl(JdbcTemplate jdbcTemplate, ActivityService activityService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.activityService = activityService;
     }
 
     @Override
@@ -84,7 +96,7 @@ public class PostServiceImpl implements PostService {
     @Override
     public List<PostCardVO> listMine() {
         long currentUserId = UserAuthContext.requireUserId();
-        String sql = CARD_SELECT + " where p.status = 1 and p.audit_status = 1 and p.user_id = ? order by p.created_at desc, p.id desc";
+        String sql = CARD_SELECT + " where p.user_id = ? and p.audit_status in (0, 1, 2) and p.status in (0, 1) order by p.updated_at desc, p.id desc";
         return jdbcTemplate.query(sql, this::mapPostCard, currentUserId);
     }
 
@@ -146,7 +158,7 @@ public class PostServiceImpl implements PostService {
         return jdbcTemplate.query(sql.toString(), this::mapPostCard, params.toArray());
     }
 
-@Override
+    @Override
     public PostDetailVO getDetail(String postId) {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
@@ -159,6 +171,7 @@ public class PostServiceImpl implements PostService {
                 p.subtitle,
                 p.description,
                 p.cover_tag,
+                p.cover_image_url,
                 p.scene_tag,
                 p.style_tag,
                 p.budget_tag,
@@ -194,6 +207,8 @@ public class PostServiceImpl implements PostService {
             rs.getString("title"),
             coalesce(rs.getString("subtitle"), buildSubtitle(rs.getString("description"))),
             coalesce(rs.getString("description"), "暂时还没有内容介绍。"),
+            coalesce(rs.getString("cover_image_url"), ""),
+            findImageUrls(rs.getLong("id")),
             rs.getLong("user_id"),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
@@ -213,8 +228,9 @@ public class PostServiceImpl implements PostService {
             formatPrice(rs.getBigDecimal("price_amount")),
             coalesce(rs.getString("product_name"), rs.getString("title")),
             coalesce(rs.getString("platform_name"), "外部平台"),
-            coalesce(rs.getString("profit_label"), "导购说明"),
-            coalesce(rs.getString("guide_tip"), "请结合自身需求与预算理性消费。"),
+            coalesce(rs.getString("profit_label"), DEFAULT_INCENTIVE_TIP),
+            coalesce(rs.getString("guide_tip"), DEFAULT_GUIDE_TIP),
+            activityService.findByPostCode(rs.getString("post_code")),
             findHighlights(rs.getString("post_code")),
             findCommentPreview(rs.getString("post_code"))
         ), viewerUserId, viewerUserId, viewerUserId, viewerUserId, postId);
@@ -225,19 +241,49 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
+    public PostProductJumpVO getProductJumpInfo(String postId) {
+        ProductJumpMeta meta = resolveProductJumpMeta(postId);
+        return buildProductJumpVO(meta, fetchProductClickCount(meta.postId()));
+    }
+
+    @Override
+    @Transactional
+    public PostProductJumpVO trackProductJump(String postId) {
+        ProductJumpMeta meta = resolveProductJumpMeta(postId);
+        Long currentUserId = UserAuthContext.getCurrentUserId();
+        jdbcTemplate.update(
+            """
+            insert into product_link_click (
+                post_id, product_link_id, click_user_id, source_page, source_action,
+                target_url, platform_name, created_at
+            ) values (?, ?, ?, ?, ?, ?, ?, now())
+            """,
+            meta.postId(),
+            meta.productLinkId(),
+            currentUserId,
+            "product_jump",
+            "jump_out",
+            meta.productUrl(),
+            meta.platformName()
+        );
+        return buildProductJumpVO(meta, fetchProductClickCount(meta.postId()));
+    }
+
+    @Override
     @Transactional
     public PostCreateResultVO create(PostCreateRequest request) {
+        PostCreateRequest normalizedRequest = normalizeCreateRequest(request);
         long currentUserId = UserAuthContext.requireUserId();
         Set<String> sceneOptions = loadTagValues("scene");
         Set<String> styleOptions = loadTagValues("style");
         Set<String> budgetOptions = loadTagValues("budget");
 
-        String sceneTag = pickTag(request.tags(), sceneOptions, "??");
-        String styleTag = pickTag(request.tags(), styleOptions, "??");
-        String budgetTag = pickTag(request.tags(), budgetOptions, "100-150");
-        String subtitle = buildSubtitle(request.desc());
-        String coverTag = sceneTag + "??";
-        String coverImageUrl = request.imageUrls() == null || request.imageUrls().isEmpty() ? null : request.imageUrls().get(0);
+        String sceneTag = pickTag(normalizedRequest.tags(), sceneOptions, "\u6821\u56ed");
+        String styleTag = pickTag(normalizedRequest.tags(), styleOptions, "\u6781\u7b80");
+        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, "100-150");
+        String subtitle = buildSubtitle(normalizedRequest.desc());
+        String coverTag = sceneTag + "\u7a7f\u642d";
+        String coverImageUrl = normalizedRequest.imageUrls().isEmpty() ? null : normalizedRequest.imageUrls().get(0);
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
@@ -252,9 +298,9 @@ public class PostServiceImpl implements PostService {
                 Statement.RETURN_GENERATED_KEYS
             );
             statement.setLong(1, currentUserId);
-            statement.setString(2, request.title());
+            statement.setString(2, normalizedRequest.title());
             statement.setString(3, subtitle);
-            statement.setString(4, request.desc());
+            statement.setString(4, normalizedRequest.desc());
             statement.setString(5, sceneTag);
             statement.setString(6, styleTag);
             statement.setString(7, budgetTag);
@@ -271,16 +317,17 @@ public class PostServiceImpl implements PostService {
         String postCode = "look" + postId;
         jdbcTemplate.update("update post set post_code = ? where id = ?", postCode, postId);
 
-        syncPostImages(postId, request.imageUrls());
-        syncPostTags(postId, request.tags(), sceneOptions, styleOptions, budgetOptions);
-        upsertProductLink(postId, request.title(), request.productLink(), budgetTag);
+        syncPostImages(postId, normalizedRequest.imageUrls());
+        syncPostTags(postId, normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
+        upsertProductLink(postId, normalizedRequest.title(), normalizedRequest.productLink(), budgetTag);
+        activityService.bindPostToActivity(postId, currentUserId, normalizedRequest.activityId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
             "\u7cfb\u7edf\u901a\u77e5",
             "\u4f60\u7684\u7a7f\u642d\u5df2\u53d1\u5e03",
-            "\u4f60\u7684\u7a7f\u642d\u300a" + request.title() + "\u300b\u5df2\u52a0\u5165\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
+            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u52a0\u5165\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
         );
 
         return new PostCreateResultVO(postCode, "CREATED", "发布成功");
@@ -306,13 +353,15 @@ public class PostServiceImpl implements PostService {
             coalesce(rs.getString("description"), ""),
             findImageUrls(meta.id()),
             findTags(meta.id()),
-            coalesce(rs.getString("product_url"), "")
+            coalesce(rs.getString("product_url"), ""),
+            activityService.findByPostCode(rs.getString("post_code"))
         ), meta.id());
     }
 
     @Override
     @Transactional
     public PostCreateResultVO updateMine(String postId, PostCreateRequest request) {
+        PostCreateRequest normalizedRequest = normalizeCreateRequest(request);
         long currentUserId = UserAuthContext.requireUserId();
         PostMeta meta = resolvePostMeta(postId);
         if (meta.authorUserId() != currentUserId) {
@@ -323,12 +372,12 @@ public class PostServiceImpl implements PostService {
         Set<String> styleOptions = loadTagValues("style");
         Set<String> budgetOptions = loadTagValues("budget");
 
-        String sceneTag = pickTag(request.tags(), sceneOptions, "??");
-        String styleTag = pickTag(request.tags(), styleOptions, "??");
-        String budgetTag = pickTag(request.tags(), budgetOptions, "100-150");
-        String subtitle = buildSubtitle(request.desc());
-        String coverTag = sceneTag + "??";
-        String coverImageUrl = request.imageUrls() == null || request.imageUrls().isEmpty() ? null : request.imageUrls().get(0);
+        String sceneTag = pickTag(normalizedRequest.tags(), sceneOptions, "\u6821\u56ed");
+        String styleTag = pickTag(normalizedRequest.tags(), styleOptions, "\u6781\u7b80");
+        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, "100-150");
+        String subtitle = buildSubtitle(normalizedRequest.desc());
+        String coverTag = sceneTag + "\u7a7f\u642d";
+        String coverImageUrl = normalizedRequest.imageUrls().isEmpty() ? null : normalizedRequest.imageUrls().get(0);
 
         jdbcTemplate.update(
             """
@@ -337,9 +386,9 @@ public class PostServiceImpl implements PostService {
                 cover_tag = ?, cover_image_url = ?, updated_at = now()
             where id = ?
             """,
-            request.title(),
+            normalizedRequest.title(),
             subtitle,
-            request.desc(),
+            normalizedRequest.desc(),
             sceneTag,
             styleTag,
             budgetTag,
@@ -348,16 +397,17 @@ public class PostServiceImpl implements PostService {
             meta.id()
         );
 
-        syncPostImages(meta.id(), request.imageUrls());
-        syncPostTags(meta.id(), request.tags(), sceneOptions, styleOptions, budgetOptions);
-        upsertProductLink(meta.id(), request.title(), request.productLink(), budgetTag);
+        syncPostImages(meta.id(), normalizedRequest.imageUrls());
+        syncPostTags(meta.id(), normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
+        upsertProductLink(meta.id(), normalizedRequest.title(), normalizedRequest.productLink(), budgetTag);
+        activityService.bindPostToActivity(meta.id(), currentUserId, normalizedRequest.activityId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
             "\u7cfb\u7edf\u901a\u77e5",
             "\u4f60\u7684\u7a7f\u642d\u5df2\u66f4\u65b0",
-            "\u4f60\u7684\u7a7f\u642d\u300a" + request.title() + "\u300b\u5df2\u66f4\u65b0\u5e76\u540c\u6b65\u5230\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
+            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u66f4\u65b0\u5e76\u540c\u6b65\u5230\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
         );
 
         return new PostCreateResultVO(postId, "UPDATED", "更新成功");
@@ -369,13 +419,49 @@ public class PostServiceImpl implements PostService {
         long currentUserId = UserAuthContext.requireUserId();
         PostMeta meta = resolvePostMeta(postId);
         if (meta.authorUserId() != currentUserId) {
-            throw new BusinessException("只能删除自己发布的穿搭");
+            throw new BusinessException("只能删除自己发布的穿搭内容");
         }
         jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
         jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
     }
 
-@Override
+    @Override
+    @Transactional
+    public void shelfDownMine(String postId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        if (meta.authorUserId() != currentUserId) {
+            throw new BusinessException("只能下架自己发布的穿搭内容");
+        }
+        if (meta.auditStatus() != 1) {
+            throw new BusinessException("当前内容未通过审核，暂时不能下架");
+        }
+        if (meta.status() == 0) {
+            throw new BusinessException("当前内容已处于下架状态");
+        }
+        jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
+        jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
+    }
+
+    @Override
+    @Transactional
+    public void restoreMine(String postId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        if (meta.authorUserId() != currentUserId) {
+            throw new BusinessException("只能操作自己发布的穿搭内容");
+        }
+        if (meta.auditStatus() != 1) {
+            throw new BusinessException("审核中的内容或已驳回内容暂时不能重新上架");
+        }
+        if (meta.status() == 1) {
+            throw new BusinessException("当前内容已是上架状态");
+        }
+        jdbcTemplate.update("update post set status = 1, updated_at = now() where id = ?", meta.id());
+        jdbcTemplate.update("update product_link set link_status = 1 where post_id = ?", meta.id());
+    }
+
+    @Override
     public List<PostCommentVO> listComments(String postId) {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
@@ -552,18 +638,20 @@ public class PostServiceImpl implements PostService {
     }
 
     private PostCardVO mapPostCard(ResultSet rs, int rowNum) throws SQLException {
+        String publishStatus = resolvePublishStatus(rs.getInt("status"), rs.getInt("audit_status"));
         return new PostCardVO(
             rs.getString("post_code"),
-            coalesce(rs.getString("cover_tag"), "校园精选"),
+            coalesce(rs.getString("cover_tag"), "\u6821\u56ed\u7cbe\u9009"),
             rs.getString("title"),
             coalesce(rs.getString("subtitle"), buildSubtitle(rs.getString("description"))),
-            coalesce(rs.getString("description"), "暂时还没有内容介绍。"),
+            coalesce(rs.getString("description"), "\u6682\u65f6\u8fd8\u6ca1\u6709\u5185\u5bb9\u4ecb\u7ecd\u3002"),
+            coalesce(rs.getString("cover_image_url"), ""),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
             coalesce(rs.getString("avatar_class"), ""),
             joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
-            coalesce(rs.getString("scene_tag"), "校园"),
-            coalesce(rs.getString("style_tag"), "极简"),
+            coalesce(rs.getString("scene_tag"), "\u6821\u56ed"),
+            coalesce(rs.getString("style_tag"), "\u6781\u7b80"),
             coalesce(rs.getString("budget_tag"), "100-150"),
             rs.getInt("like_count"),
             rs.getInt("comment_count"),
@@ -571,10 +659,47 @@ public class PostServiceImpl implements PostService {
             rs.getInt("share_count"),
             formatPrice(rs.getBigDecimal("price_amount")),
             coalesce(rs.getString("product_name"), rs.getString("title")),
-            coalesce(rs.getString("platform_name"), "外部平台"),
-            coalesce(rs.getString("profit_label"), "导购说明"),
-            coalesce(rs.getString("guide_tip"), "请结合自身需求与预算理性消费。")
+            coalesce(rs.getString("platform_name"), "\u5916\u90e8\u5e73\u53f0"),
+            coalesce(rs.getString("profit_label"), DEFAULT_INCENTIVE_TIP),
+            coalesce(rs.getString("guide_tip"), DEFAULT_GUIDE_TIP),
+            publishStatus,
+            resolvePublishStatusText(publishStatus),
+            resolvePublishStatusDesc(publishStatus),
+            "PUBLISHED".equals(publishStatus),
+            "PUBLISHED".equals(publishStatus),
+            "OFFLINE".equals(publishStatus)
         );
+    }
+
+    private String resolvePublishStatus(int status, int auditStatus) {
+        if (auditStatus == 2) {
+            return "REJECTED";
+        }
+        if (auditStatus == 0) {
+            return "PENDING";
+        }
+        if (status == 0) {
+            return "OFFLINE";
+        }
+        return "PUBLISHED";
+    }
+
+    private String resolvePublishStatusText(String publishStatus) {
+        return switch (publishStatus) {
+            case "PENDING" -> "\u5ba1\u6838\u4e2d";
+            case "REJECTED" -> "\u5ba1\u6838\u9a73\u56de";
+            case "OFFLINE" -> "\u5df2\u4e0b\u67b6";
+            default -> "\u5df2\u53d1\u5e03";
+        };
+    }
+
+    private String resolvePublishStatusDesc(String publishStatus) {
+        return switch (publishStatus) {
+            case "PENDING" -> "\u5185\u5bb9\u6b63\u5728\u5ba1\u6838\uff0c\u6682\u65f6\u4e0d\u4f1a\u5c55\u793a\u5728\u9996\u9875\u4fe1\u606f\u6d41\u3002";
+            case "REJECTED" -> "\u5185\u5bb9\u672a\u901a\u8fc7\u5ba1\u6838\uff0c\u53ef\u4fee\u6539\u540e\u518d\u6b21\u53d1\u5e03\u3002";
+            case "OFFLINE" -> "\u5185\u5bb9\u5df2\u4e0b\u67b6\uff0c\u4ec5\u4f60\u81ea\u5df1\u53ef\u4ee5\u7ee7\u7eed\u7ba1\u7406\u3002";
+            default -> "\u5185\u5bb9\u5df2\u901a\u8fc7\u5ba1\u6838\uff0c\u6b63\u5728\u5bf9\u5916\u5c55\u793a\u3002";
+        };
     }
 
     private PostCommentVO mapComment(ResultSet rs, int rowNum, long viewerUserId) throws SQLException {
@@ -696,8 +821,8 @@ public class PostServiceImpl implements PostService {
                 detectPlatform(productLink),
                 productLink,
                 estimatePrice(budgetTag),
-                "?????????",
-                "??????????????",
+                DEFAULT_INCENTIVE_TIP,
+                DEFAULT_GUIDE_TIP,
                 postId
             );
             return;
@@ -714,9 +839,74 @@ public class PostServiceImpl implements PostService {
             detectPlatform(productLink),
             productLink,
             estimatePrice(budgetTag),
-            "???????????",
-            "??????????????"
+            DEFAULT_INCENTIVE_TIP,
+            DEFAULT_GUIDE_TIP
         );
+    }
+
+    private ProductJumpMeta resolveProductJumpMeta(String postCode) {
+        List<ProductJumpMeta> list = jdbcTemplate.query(
+            """
+            select
+                p.id,
+                p.post_code,
+                p.title,
+                pl.id as product_link_id,
+                pl.product_name,
+                pl.platform_name,
+                pl.product_url,
+                pl.price_amount,
+                pl.profit_label,
+                pl.guide_tip
+            from post p
+            left join product_link pl on pl.post_id = p.id and pl.link_status = 1
+            where p.status = 1 and p.audit_status = 1 and p.post_code = ?
+            limit 1
+            """,
+            (rs, rowNum) -> new ProductJumpMeta(
+                rs.getLong("id"),
+                rs.getString("post_code"),
+                rs.getLong("product_link_id"),
+                coalesce(rs.getString("product_name"), rs.getString("title")),
+                coalesce(rs.getString("platform_name"), "外部平台"),
+                coalesce(rs.getString("product_url"), ""),
+                rs.getBigDecimal("price_amount"),
+                coalesce(rs.getString("profit_label"), DEFAULT_INCENTIVE_TIP),
+                coalesce(rs.getString("guide_tip"), DEFAULT_GUIDE_TIP)
+            ),
+            postCode
+        );
+        if (list.isEmpty()) {
+            throw new BusinessException("未找到对应的导购内容");
+        }
+        ProductJumpMeta meta = list.get(0);
+        if (meta.productLinkId() <= 0 || meta.productUrl().isBlank()) {
+            throw new BusinessException("当前内容暂未配置可用的导购链接");
+        }
+        return meta;
+    }
+
+    private PostProductJumpVO buildProductJumpVO(ProductJumpMeta meta, int clickCount) {
+        return new PostProductJumpVO(
+            meta.postCode(),
+            meta.productName(),
+            meta.platformName(),
+            formatPrice(meta.priceAmount()),
+            meta.productUrl(),
+            meta.incentiveTip(),
+            meta.guideTip(),
+            DEFAULT_CLICK_TIP,
+            clickCount
+        );
+    }
+
+    private int fetchProductClickCount(long postId) {
+        Integer count = jdbcTemplate.queryForObject(
+            "select count(*) from product_link_click where post_id = ?",
+            Integer.class,
+            postId
+        );
+        return count == null ? 0 : count;
     }
 
     private List<String> findHighlights(String postCode) {
@@ -752,12 +942,18 @@ public class PostServiceImpl implements PostService {
 
     private PostMeta resolvePostMeta(String postCode) {
         List<PostMeta> list = jdbcTemplate.query(
-            "select id, user_id, title from post where post_code = ? and status = 1 and audit_status in (0, 1, 2)",
-            (rs, rowNum) -> new PostMeta(rs.getLong("id"), rs.getLong("user_id"), rs.getString("title")),
+            "select id, user_id, title, status, audit_status from post where post_code = ? and audit_status in (0, 1, 2) and status in (0, 1)",
+            (rs, rowNum) -> new PostMeta(
+                rs.getLong("id"),
+                rs.getLong("user_id"),
+                rs.getString("title"),
+                rs.getInt("status"),
+                rs.getInt("audit_status")
+            ),
             postCode
         );
         if (list.isEmpty()) {
-            throw new BusinessException("未找到对应的穿搭内容");
+            throw new BusinessException("\u672a\u627e\u5230\u5bf9\u5e94\u7684\u7a7f\u642d\u5185\u5bb9");
         }
         return list.get(0);
     }
@@ -771,6 +967,27 @@ public class PostServiceImpl implements PostService {
         return count == null ? 0 : count;
     }
 
+    private PostCreateRequest normalizeCreateRequest(PostCreateRequest request) {
+        if (request == null) {
+            throw new BusinessException("发布内容不能为空");
+        }
+        String title = normalizeRequiredText(request.title(), "标题不能为空");
+        String desc = normalizeRequiredText(request.desc(), "描述不能为空");
+        List<String> imageUrls = sanitizeValues(request.imageUrls(), 9, "图片最多 9 张");
+        List<String> tags = sanitizeValues(request.tags(), 0, "");
+        String productLink = normalizeRequiredText(request.productLink(), "商品链接不能为空");
+        String activityId = normalizeOptionalText(request.activityId());
+
+        if (imageUrls.isEmpty()) {
+            throw new BusinessException("请至少上传 1 张图片");
+        }
+        if (tags.isEmpty()) {
+            throw new BusinessException("请至少选择一个标签");
+        }
+
+        return new PostCreateRequest(title, desc, imageUrls, tags, productLink, activityId);
+    }
+
     private String pickTag(List<String> tags, Set<String> candidates, String fallback) {
         if (tags != null) {
             for (String tag : tags) {
@@ -780,6 +997,40 @@ public class PostServiceImpl implements PostService {
             }
         }
         return fallback;
+    }
+
+    private List<String> sanitizeValues(List<String> values, int maxSize, String maxSizeMessage) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> normalized = new ArrayList<>();
+        Set<String> unique = new LinkedHashSet<>();
+        for (String value : values) {
+            String safeValue = normalizeOptionalText(value);
+            if (safeValue != null && unique.add(safeValue)) {
+                normalized.add(safeValue);
+            }
+        }
+        if (maxSize > 0 && normalized.size() > maxSize) {
+            throw new BusinessException(maxSizeMessage);
+        }
+        return normalized;
+    }
+
+    private String normalizeRequiredText(String value, String message) {
+        String normalized = normalizeOptionalText(value);
+        if (normalized == null) {
+            throw new BusinessException(message);
+        }
+        return normalized;
+    }
+
+    private String normalizeOptionalText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private String resolveTagType(String tag, Set<String> sceneOptions, Set<String> styleOptions, Set<String> budgetOptions) {
@@ -896,6 +1147,19 @@ public class PostServiceImpl implements PostService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private record PostMeta(long id, long authorUserId, String title) {
+    private record PostMeta(long id, long authorUserId, String title, int status, int auditStatus) {
+    }
+
+    private record ProductJumpMeta(
+        long postId,
+        String postCode,
+        long productLinkId,
+        String productName,
+        String platformName,
+        String productUrl,
+        BigDecimal priceAmount,
+        String incentiveTip,
+        String guideTip
+    ) {
     }
 }
