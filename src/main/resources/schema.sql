@@ -1,3 +1,5 @@
+SET NAMES utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS report_record;
 DROP TABLE IF EXISTS message_notification;
@@ -9,6 +11,7 @@ DROP TABLE IF EXISTS campaign;
 DROP TABLE IF EXISTS merchant;
 DROP TABLE IF EXISTS post_activity_binding;
 DROP TABLE IF EXISTS user_activity_join;
+DROP TABLE IF EXISTS official_announcement;
 DROP TABLE IF EXISTS activity_topic;
 DROP TABLE IF EXISTS post_comment;
 DROP TABLE IF EXISTS post_like;
@@ -30,6 +33,7 @@ CREATE TABLE app_user (
     phone VARCHAR(20) NOT NULL UNIQUE,
     nickname VARCHAR(50) NOT NULL,
     avatar_url VARCHAR(255),
+    password_hash VARCHAR(255),
     status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -158,6 +162,23 @@ CREATE TABLE activity_topic (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE official_announcement (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    title VARCHAR(120) NOT NULL,
+    badge_label VARCHAR(30) NOT NULL DEFAULT '官方公告',
+    summary VARCHAR(255) NOT NULL,
+    content TEXT,
+    status TINYINT NOT NULL DEFAULT 1,
+    pinned_flag TINYINT NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    publish_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expire_time DATETIME,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE user_activity_join (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     activity_id BIGINT NOT NULL,
@@ -188,6 +209,7 @@ CREATE TABLE post_draft (
     image_urls_json TEXT,
     tags_json TEXT,
     product_link VARCHAR(500),
+    product_price DECIMAL(10,2),
     activity_code VARCHAR(50),
     status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -232,8 +254,18 @@ CREATE TABLE post_comment (
     like_count INT NOT NULL DEFAULT 0,
     status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    parent_comment_id BIGINT,
+    reply_user_id BIGINT,
     CONSTRAINT fk_post_comment_post FOREIGN KEY (post_id) REFERENCES post(id),
     CONSTRAINT fk_post_comment_user FOREIGN KEY (user_id) REFERENCES app_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE post_comment_like (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    comment_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_post_comment_like (comment_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE merchant (

@@ -4,6 +4,7 @@ public record UserAuthResultVO(
     String token,
     Long userId,
     String phone,
-    String nickname
+    String nickname,
+    String avatarUrl
 ) {
 }

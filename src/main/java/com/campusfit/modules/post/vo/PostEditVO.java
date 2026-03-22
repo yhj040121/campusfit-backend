@@ -2,6 +2,7 @@ package com.campusfit.modules.post.vo;
 
 import com.campusfit.modules.activity.vo.ActivityItemVO;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public record PostEditVO(
@@ -11,6 +12,7 @@ public record PostEditVO(
     List<String> imageUrls,
     List<String> tags,
     String productLink,
+    BigDecimal productPrice,
     ActivityItemVO activity
 ) {
 }

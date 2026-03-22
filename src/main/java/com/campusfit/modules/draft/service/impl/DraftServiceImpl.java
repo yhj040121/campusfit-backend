@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -24,8 +25,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,11 +37,11 @@ public class DraftServiceImpl implements DraftService {
 
     private static final String DEFAULT_DRAFT_TITLE = "未命名草稿";
     private static final String DEFAULT_DRAFT_NOTE = "这条草稿还没有补充描述。";
-    private static final String PUBLISH_INCOMPLETE_MESSAGE = "草稿还不能发布，请先补齐标题、描述、标签和导购链接";
+    private static final String PUBLISH_INCOMPLETE_MESSAGE = "草稿还不能发布，请先补齐标题、描述、标签、商品价格和导购链接";
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
     private static final String DRAFT_SELECT = """
-        select draft_code, title, description, image_urls_json, tags_json, product_link, activity_code, updated_at
+        select draft_code, title, description, image_urls_json, tags_json, product_link, product_price, activity_code, updated_at
         from post_draft
         where status = 1
         """;
@@ -95,9 +96,9 @@ public class DraftServiceImpl implements DraftService {
         jdbcTemplate.update(
             """
             insert into post_draft (
-                draft_code, user_id, title, description, image_urls_json, tags_json, product_link, activity_code,
-                status, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, 1, now(), now())
+                draft_code, user_id, title, description, image_urls_json, tags_json, product_link, product_price,
+                activity_code, status, created_at, updated_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, now(), now())
             """,
             draftCode,
             currentUserId,
@@ -106,6 +107,7 @@ public class DraftServiceImpl implements DraftService {
             writeJson(payload.imageUrls()),
             writeJson(payload.tags()),
             payload.productLink(),
+            payload.productPrice(),
             payload.activityCode()
         );
 
@@ -149,6 +151,7 @@ public class DraftServiceImpl implements DraftService {
             payload.imageUrls(),
             payload.tags(),
             payload.productLink(),
+            payload.productPrice(),
             payload.activityCode()
         ));
         softDeleteDraft(draftId, currentUserId);
@@ -176,6 +179,7 @@ public class DraftServiceImpl implements DraftService {
             sanitizeStringList(readStringList(rs.getString("image_urls_json"))),
             sanitizeStringList(readStringList(rs.getString("tags_json"))),
             normalize(rs.getString("product_link")),
+            rs.getBigDecimal("product_price"),
             normalize(rs.getString("activity_code")),
             rs.getTimestamp("updated_at")
         );
@@ -200,6 +204,7 @@ public class DraftServiceImpl implements DraftService {
             draft.tags(),
             draft.imageUrls(),
             blankToEmpty(draft.productLink()),
+            draft.productPrice(),
             formatTime(draft.updatedAt()),
             resolveActivity(draft.activityCode(), activityCache)
         );
@@ -226,6 +231,7 @@ public class DraftServiceImpl implements DraftService {
             sanitizeStringList(request.imageUrls()),
             sanitizeStringList(request.tags()),
             normalize(request.productLink()),
+            request.productPrice(),
             activityCode
         );
     }
@@ -240,6 +246,7 @@ public class DraftServiceImpl implements DraftService {
             request.imageUrls() != null ? sanitizeStringList(request.imageUrls()) : sanitizeStringList(draft.imageUrls()),
             request.tags() != null ? sanitizeStringList(request.tags()) : sanitizeStringList(draft.tags()),
             request.productLink() != null ? normalize(request.productLink()) : normalize(draft.productLink()),
+            request.productPrice() != null ? request.productPrice() : draft.productPrice(),
             activityCode
         );
     }
@@ -252,6 +259,7 @@ public class DraftServiceImpl implements DraftService {
             sanitizeStringList(draft.imageUrls()),
             sanitizeStringList(draft.tags()),
             normalize(draft.productLink()),
+            draft.productPrice(),
             activityCode
         );
     }
@@ -260,7 +268,7 @@ public class DraftServiceImpl implements DraftService {
         jdbcTemplate.update(
             """
             update post_draft
-            set title = ?, description = ?, image_urls_json = ?, tags_json = ?, product_link = ?, activity_code = ?, updated_at = now()
+            set title = ?, description = ?, image_urls_json = ?, tags_json = ?, product_link = ?, product_price = ?, activity_code = ?, updated_at = now()
             where draft_code = ? and user_id = ? and status = 1
             """,
             payload.title(),
@@ -268,6 +276,7 @@ public class DraftServiceImpl implements DraftService {
             writeJson(payload.imageUrls()),
             writeJson(payload.tags()),
             payload.productLink(),
+            payload.productPrice(),
             payload.activityCode(),
             draftId,
             currentUserId
@@ -285,10 +294,11 @@ public class DraftServiceImpl implements DraftService {
         boolean hasTitle = payload.title() != null;
         boolean hasDesc = payload.desc() != null;
         boolean hasLink = payload.productLink() != null;
+        boolean hasPrice = payload.productPrice() != null;
         boolean hasTags = !payload.tags().isEmpty();
         boolean hasImages = !payload.imageUrls().isEmpty();
         boolean hasActivity = payload.activityCode() != null;
-        if (!hasTitle && !hasDesc && !hasLink && !hasTags && !hasImages && !hasActivity) {
+        if (!hasTitle && !hasDesc && !hasLink && !hasPrice && !hasTags && !hasImages && !hasActivity) {
             throw new BusinessException("草稿内容不能为空");
         }
     }
@@ -297,6 +307,7 @@ public class DraftServiceImpl implements DraftService {
         if (isBlank(payload.title()) || DEFAULT_DRAFT_TITLE.equals(payload.title())
             || isBlank(payload.desc())
             || isBlank(payload.productLink())
+            || payload.productPrice() == null
             || payload.tags().isEmpty()) {
             throw new BusinessException(PUBLISH_INCOMPLETE_MESSAGE);
         }
@@ -406,6 +417,7 @@ public class DraftServiceImpl implements DraftService {
         List<String> imageUrls,
         List<String> tags,
         String productLink,
+        BigDecimal productPrice,
         String activityCode,
         Timestamp updatedAt
     ) {
@@ -417,6 +429,7 @@ public class DraftServiceImpl implements DraftService {
         List<String> imageUrls,
         List<String> tags,
         String productLink,
+        BigDecimal productPrice,
         String activityCode
     ) {
     }

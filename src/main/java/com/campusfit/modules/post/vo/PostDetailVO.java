@@ -15,6 +15,7 @@ public record PostDetailVO(
     Long authorId,
     String user,
     String avatar,
+    String avatarUrl,
     String avatarClass,
     String school,
     boolean mine,
@@ -35,6 +36,6 @@ public record PostDetailVO(
     String guideTip,
     ActivityItemVO activity,
     List<String> highlights,
-    List<String> commentsPreview
+    List<PostCommentVO> commentsPreview
 ) {
 }

@@ -4,6 +4,7 @@ public record UserCardVO(
     Long userId,
     String name,
     String avatar,
+    String avatarUrl,
     String avatarClass,
     String intro,
     boolean active

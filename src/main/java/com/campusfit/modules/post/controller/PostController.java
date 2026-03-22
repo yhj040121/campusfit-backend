@@ -81,12 +81,12 @@ public class PostController {
 
     @PostMapping
     public ApiResponse<PostCreateResultVO> create(@Valid @RequestBody PostCreateRequest request) {
-        return ApiResponse.success("发布成功", postService.create(request));
+        return ApiResponse.success("已提交审核", postService.create(request));
     }
 
     @PutMapping("/{postId}")
     public ApiResponse<PostCreateResultVO> update(@PathVariable String postId, @Valid @RequestBody PostCreateRequest request) {
-        return ApiResponse.success("更新成功", postService.updateMine(postId, request));
+        return ApiResponse.success("修改已提交审核", postService.updateMine(postId, request));
     }
 
     @PostMapping("/{postId}/delete")
@@ -121,6 +121,11 @@ public class PostController {
     public ApiResponse<Boolean> deleteComment(@PathVariable String postId, @PathVariable String commentId) {
         postService.deleteComment(postId, commentId);
         return ApiResponse.success("评论已删除", true);
+    }
+
+    @PostMapping("/{postId}/comments/{commentId}/like")
+    public ApiResponse<PostInteractionVO> toggleCommentLike(@PathVariable String postId, @PathVariable String commentId) {
+        return ApiResponse.success(postService.toggleCommentLike(postId, commentId));
     }
 
     @GetMapping("/{postId}/likes")

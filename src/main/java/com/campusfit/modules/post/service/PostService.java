@@ -47,6 +47,8 @@ public interface PostService {
 
     void deleteComment(String postId, String commentId);
 
+    PostInteractionVO toggleCommentLike(String postId, String commentId);
+
     List<UserCardVO> listLikeUsers(String postId);
 
     PostInteractionVO toggleLike(String postId);

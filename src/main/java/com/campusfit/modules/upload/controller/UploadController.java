@@ -4,8 +4,8 @@ import com.campusfit.common.api.ApiResponse;
 import com.campusfit.modules.upload.service.UploadService;
 import com.campusfit.modules.upload.vo.UploadImageVO;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -22,5 +22,10 @@ public class UploadController {
     @PostMapping("/images")
     public ApiResponse<UploadImageVO> uploadImage(@RequestParam("file") MultipartFile file) {
         return ApiResponse.success("图片上传成功", uploadService.uploadImage(file));
+    }
+
+    @PostMapping("/avatar")
+    public ApiResponse<UploadImageVO> uploadAvatar(@RequestParam("file") MultipartFile file) {
+        return ApiResponse.success("头像上传成功", uploadService.uploadAvatar(file));
     }
 }

@@ -3,9 +3,11 @@ package com.campusfit.modules.auth.controller;
 import com.campusfit.common.api.ApiResponse;
 import com.campusfit.modules.auth.dto.UserLoginRequest;
 import com.campusfit.modules.auth.dto.UserRegisterRequest;
+import com.campusfit.modules.auth.dto.UserSendCodeRequest;
 import com.campusfit.modules.auth.service.UserAuthService;
 import com.campusfit.modules.auth.support.UserSession;
 import com.campusfit.modules.auth.vo.UserAuthResultVO;
+import com.campusfit.modules.auth.vo.UserSendCodeVO;
 import com.campusfit.modules.auth.vo.UserSessionVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -25,6 +27,11 @@ public class UserAuthController {
 
     public UserAuthController(UserAuthService userAuthService) {
         this.userAuthService = userAuthService;
+    }
+
+    @PostMapping("/send-code")
+    public ApiResponse<UserSendCodeVO> sendCode(@Valid @RequestBody UserSendCodeRequest request) {
+        return ApiResponse.success("Verification code sent", userAuthService.sendCode(request));
     }
 
     @PostMapping("/login")

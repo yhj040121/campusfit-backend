@@ -1,5 +1,9 @@
 package com.campusfit.modules.admin.service;
 
+import com.campusfit.modules.admin.dto.AdminActivitySaveRequest;
+import com.campusfit.modules.admin.dto.AdminAnnouncementSaveRequest;
+import com.campusfit.modules.admin.vo.AdminActivityItemVO;
+import com.campusfit.modules.admin.vo.AdminAnnouncementItemVO;
 import com.campusfit.modules.admin.vo.AdminContentAuditItemVO;
 import com.campusfit.modules.admin.vo.AdminDashboardSummaryVO;
 import com.campusfit.modules.admin.vo.AdminMerchantItemVO;
@@ -17,6 +21,10 @@ public interface AdminDashboardService {
 
     List<AdminContentAuditItemVO> listContentAuditItems();
 
+    List<AdminAnnouncementItemVO> listAnnouncements();
+
+    List<AdminActivityItemVO> listActivities();
+
     List<AdminMerchantItemVO> listMerchants();
 
     List<AdminSettlementItemVO> listSettlements();
@@ -30,6 +38,22 @@ public interface AdminDashboardService {
     void approvePost(Long postId);
 
     void rejectPost(Long postId);
+
+    void createAnnouncement(AdminAnnouncementSaveRequest request, String operatorName);
+
+    void updateAnnouncement(Long announcementId, AdminAnnouncementSaveRequest request, String operatorName);
+
+    void enableAnnouncement(Long announcementId, String operatorName);
+
+    void disableAnnouncement(Long announcementId, String operatorName);
+
+    void createActivity(AdminActivitySaveRequest request);
+
+    void updateActivity(Long activityId, AdminActivitySaveRequest request);
+
+    void startActivity(Long activityId);
+
+    void stopActivity(Long activityId);
 
     void settleCommission(Long recordId);
 

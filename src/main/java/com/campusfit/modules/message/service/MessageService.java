@@ -13,4 +13,8 @@ public interface MessageService {
     boolean markRead(String messageId);
 
     int markAllRead();
+
+    boolean deleteMessage(String messageId);
+
+    int deleteReadMessages();
 }

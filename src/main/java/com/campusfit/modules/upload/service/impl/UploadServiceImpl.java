@@ -46,13 +46,20 @@ public class UploadServiceImpl implements UploadService {
     @Override
     public UploadImageVO uploadImage(MultipartFile file) {
         long currentUserId = UserAuthContext.requireUserId();
+        return uploadInternal(file, buildPostImageObjectKey(currentUserId, resolveExtension(file)));
+    }
+
+    @Override
+    public UploadImageVO uploadAvatar(MultipartFile file) {
+        Long currentUserId = UserAuthContext.getCurrentUserId();
+        return uploadInternal(file, buildAvatarObjectKey(currentUserId, resolveExtension(file)));
+    }
+
+    private UploadImageVO uploadInternal(MultipartFile file, String objectKey) {
         validateConfig();
         validateFile(file);
 
-        String extension = resolveExtension(file);
-        String objectKey = buildObjectKey(currentUserId, extension);
         String contentType = normalizeContentType(file.getContentType());
-
         PutObjectRequest.Builder requestBuilder = PutObjectRequest.builder()
             .bucket(properties.getBucket())
             .key(objectKey)
@@ -64,11 +71,11 @@ public class UploadServiceImpl implements UploadService {
         try (S3Client s3Client = buildClient(); InputStream inputStream = file.getInputStream()) {
             s3Client.putObject(requestBuilder.build(), RequestBody.fromInputStream(inputStream, file.getSize()));
         } catch (IOException exception) {
-            throw new BusinessException("读取图片失败，请重新选择后再试");
+            throw new BusinessException("读取图片失败，请重新选择后再试。");
         } catch (RuntimeException exception) {
             log.error("Failed to upload image to Aliyun OSS, bucket={}, endpoint={}, region={}",
                 properties.getBucket(), properties.getEndpoint(), properties.getRegion(), exception);
-            throw new BusinessException("图片上传失败，请检查阿里云 OSS 配置后重试");
+            throw new BusinessException("图片上传失败，请检查阿里云 OSS 配置后重试。");
         }
 
         return new UploadImageVO(
@@ -76,25 +83,25 @@ public class UploadServiceImpl implements UploadService {
             objectKey,
             safeFileName(file.getOriginalFilename()),
             file.getSize(),
-            contentType == null ? "image/" + extension : contentType
+            contentType == null ? "image/" + resolveExtension(file) : contentType
         );
     }
 
     private void validateConfig() {
         if (isBlank(properties.getAccessKeyId()) || isBlank(properties.getAccessKeySecret())) {
-            throw new BusinessException("图片上传配置未完成，请先设置阿里云 OSS AccessKeyId 和 AccessKeySecret");
+            throw new BusinessException("图片上传配置未完成，请先设置阿里云 OSS 的 AccessKey。");
         }
         if (isBlank(properties.getBucket()) || isBlank(properties.getEndpoint()) || isBlank(properties.getRegion())) {
-            throw new BusinessException("图片上传配置不完整，请检查 Bucket、Endpoint 和 Region");
+            throw new BusinessException("图片上传配置不完整，请检查 Bucket、Endpoint 和 Region。");
         }
     }
 
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException("请先选择要上传的图片");
+            throw new BusinessException("请先选择要上传的图片。");
         }
         if (file.getSize() > properties.getMaxFileSizeBytes()) {
-            throw new BusinessException("图片大小不能超过 10MB");
+            throw new BusinessException("图片大小不能超过 10MB。");
         }
 
         String extension = resolveExtension(file);
@@ -105,12 +112,12 @@ public class UploadServiceImpl implements UploadService {
             }
         }
         if (!allowedExtensions.contains(extension)) {
-            throw new BusinessException("仅支持 jpg、jpeg、png、webp 格式的图片");
+            throw new BusinessException("仅支持 jpg、jpeg、png、webp 格式的图片。");
         }
 
         String contentType = normalizeContentType(file.getContentType());
         if (contentType != null && !IMAGE_CONTENT_TYPES.contains(contentType)) {
-            throw new BusinessException("仅支持 jpg、jpeg、png、webp 格式的图片");
+            throw new BusinessException("仅支持 jpg、jpeg、png、webp 格式的图片。");
         }
     }
 
@@ -128,12 +135,26 @@ public class UploadServiceImpl implements UploadService {
             .build();
     }
 
-    private String buildObjectKey(long currentUserId, String extension) {
+    private String buildPostImageObjectKey(long currentUserId, String extension) {
         LocalDate today = LocalDate.now();
         return String.format(
             Locale.ROOT,
             "post-images/%d/%04d/%02d/%s.%s",
             currentUserId,
+            today.getYear(),
+            today.getMonthValue(),
+            UUID.randomUUID().toString().replace("-", ""),
+            extension
+        );
+    }
+
+    private String buildAvatarObjectKey(Long currentUserId, String extension) {
+        LocalDate today = LocalDate.now();
+        String ownerSegment = currentUserId == null ? "guest" : String.valueOf(currentUserId);
+        return String.format(
+            Locale.ROOT,
+            "avatars/%s/%04d/%02d/%s.%s",
+            ownerSegment,
             today.getYear(),
             today.getMonthValue(),
             UUID.randomUUID().toString().replace("-", ""),
@@ -171,7 +192,7 @@ public class UploadServiceImpl implements UploadService {
         if ("image/webp".equals(contentType)) {
             return "webp";
         }
-        throw new BusinessException("无法识别图片格式，请重新选择 jpg、jpeg、png、webp 图片");
+        throw new BusinessException("无法识别图片格式，请重新选择 jpg、jpeg、png、webp 图片。");
     }
 
     private String normalizeContentType(String contentType) {

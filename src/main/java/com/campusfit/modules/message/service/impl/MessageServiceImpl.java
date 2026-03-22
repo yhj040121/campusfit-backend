@@ -72,6 +72,27 @@ public class MessageServiceImpl implements MessageService {
         );
     }
 
+    @Override
+    public boolean deleteMessage(String messageId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        long id = parseMessageId(messageId);
+        int deleted = jdbcTemplate.update(
+            "delete from message_notification where id = ? and user_id = ?",
+            id,
+            currentUserId
+        );
+        return deleted > 0;
+    }
+
+    @Override
+    public int deleteReadMessages() {
+        long currentUserId = UserAuthContext.requireUserId();
+        return jdbcTemplate.update(
+            "delete from message_notification where user_id = ? and read_status = 1",
+            currentUserId
+        );
+    }
+
     private long parseMessageId(String messageId) {
         try {
             return Long.parseLong(messageId);

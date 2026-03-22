@@ -57,6 +57,6 @@ public class DraftController {
         @PathVariable String draftId,
         @Valid @RequestBody(required = false) DraftSaveRequest request
     ) {
-        return ApiResponse.success("草稿已发布", draftService.publish(draftId, request));
+        return ApiResponse.success("草稿已提交审核", draftService.publish(draftId, request));
     }
 }

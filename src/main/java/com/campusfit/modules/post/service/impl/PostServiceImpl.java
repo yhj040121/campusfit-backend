@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -31,9 +30,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -63,6 +64,7 @@ public class PostServiceImpl implements PostService {
             p.favorite_count,
             p.share_count,
             u.nickname,
+            u.avatar_url,
             coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
             coalesce(up.avatar_class, '') as avatar_class,
             up.school_name,
@@ -180,6 +182,7 @@ public class PostServiceImpl implements PostService {
                 p.favorite_count,
                 p.share_count,
                 u.nickname,
+                u.avatar_url,
                 coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                 coalesce(up.avatar_class, '') as avatar_class,
                 up.school_name,
@@ -212,6 +215,7 @@ public class PostServiceImpl implements PostService {
             rs.getLong("user_id"),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
+            coalesce(rs.getString("avatar_url"), ""),
             coalesce(rs.getString("avatar_class"), ""),
             joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
             currentUserId != null && rs.getLong("user_id") == currentUserId,
@@ -232,7 +236,7 @@ public class PostServiceImpl implements PostService {
             coalesce(rs.getString("guide_tip"), DEFAULT_GUIDE_TIP),
             activityService.findByPostCode(rs.getString("post_code")),
             findHighlights(rs.getString("post_code")),
-            findCommentPreview(rs.getString("post_code"))
+            findCommentPreview(rs.getLong("id"), viewerUserId)
         ), viewerUserId, viewerUserId, viewerUserId, viewerUserId, postId);
         if (list.isEmpty()) {
             throw new BusinessException("未找到对应的穿搭内容");
@@ -251,6 +255,9 @@ public class PostServiceImpl implements PostService {
     public PostProductJumpVO trackProductJump(String postId) {
         ProductJumpMeta meta = resolveProductJumpMeta(postId);
         Long currentUserId = UserAuthContext.getCurrentUserId();
+        if (currentUserId != null && hasRecentTrackedJump(meta.postId(), currentUserId)) {
+            return buildProductJumpVO(meta, fetchProductClickCount(meta.postId()));
+        }
         jdbcTemplate.update(
             """
             insert into product_link_click (
@@ -293,7 +300,7 @@ public class PostServiceImpl implements PostService {
                     user_id, title, subtitle, description, scene_tag, style_tag, budget_tag,
                     cover_tag, cover_image_url, status, audit_status, like_count, comment_count,
                     favorite_count, share_count, created_at, updated_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0, 0, now(), now())
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0, 0, now(), now())
                 """,
                 Statement.RETURN_GENERATED_KEYS
             );
@@ -319,18 +326,18 @@ public class PostServiceImpl implements PostService {
 
         syncPostImages(postId, normalizedRequest.imageUrls());
         syncPostTags(postId, normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
-        upsertProductLink(postId, normalizedRequest.title(), normalizedRequest.productLink(), budgetTag);
+        upsertProductLink(postId, normalizedRequest.title(), normalizedRequest.productLink(), normalizedRequest.productPrice());
         activityService.bindPostToActivity(postId, currentUserId, normalizedRequest.activityId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
             "\u7cfb\u7edf\u901a\u77e5",
-            "\u4f60\u7684\u7a7f\u642d\u5df2\u53d1\u5e03",
-            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u52a0\u5165\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
+            "\u4f60\u7684\u7a7f\u642d\u5df2\u63d0\u4ea4\u5ba1\u6838",
+            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u63d0\u4ea4\u81f3\u5185\u5bb9\u5ba1\u6838\u961f\u5217\u3002"
         );
 
-        return new PostCreateResultVO(postCode, "CREATED", "发布成功");
+        return new PostCreateResultVO(postCode, "PENDING", "已提交审核");
     }
 
     @Override
@@ -341,7 +348,8 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("只能编辑自己发布的穿搭");
         }
         String sql = """
-            select p.post_code, p.title, p.description, coalesce(pl.product_url, '') as product_url
+            select p.post_code, p.title, p.description, coalesce(pl.product_url, '') as product_url,
+                   pl.price_amount as product_price
             from post p
             left join product_link pl on pl.post_id = p.id
             where p.id = ?
@@ -354,6 +362,7 @@ public class PostServiceImpl implements PostService {
             findImageUrls(meta.id()),
             findTags(meta.id()),
             coalesce(rs.getString("product_url"), ""),
+            rs.getBigDecimal("product_price"),
             activityService.findByPostCode(rs.getString("post_code"))
         ), meta.id());
     }
@@ -383,7 +392,7 @@ public class PostServiceImpl implements PostService {
             """
             update post
             set title = ?, subtitle = ?, description = ?, scene_tag = ?, style_tag = ?, budget_tag = ?,
-                cover_tag = ?, cover_image_url = ?, updated_at = now()
+                cover_tag = ?, cover_image_url = ?, status = 1, audit_status = 0, updated_at = now()
             where id = ?
             """,
             normalizedRequest.title(),
@@ -399,18 +408,18 @@ public class PostServiceImpl implements PostService {
 
         syncPostImages(meta.id(), normalizedRequest.imageUrls());
         syncPostTags(meta.id(), normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
-        upsertProductLink(meta.id(), normalizedRequest.title(), normalizedRequest.productLink(), budgetTag);
+        upsertProductLink(meta.id(), normalizedRequest.title(), normalizedRequest.productLink(), normalizedRequest.productPrice());
         activityService.bindPostToActivity(meta.id(), currentUserId, normalizedRequest.activityId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             currentUserId,
             "\u7cfb\u7edf\u901a\u77e5",
-            "\u4f60\u7684\u7a7f\u642d\u5df2\u66f4\u65b0",
-            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u66f4\u65b0\u5e76\u540c\u6b65\u5230\u5185\u5bb9\u7ba1\u7406\u5217\u8868\u3002"
+            "\u4f60\u7684\u7a7f\u642d\u5df2\u91cd\u65b0\u63d0\u4ea4\u5ba1\u6838",
+            "\u4f60\u7684\u7a7f\u642d\u300a" + normalizedRequest.title() + "\u300b\u5df2\u91cd\u65b0\u63d0\u4ea4\u5ba1\u6838\uff0c\u5f85\u5ba1\u6838\u901a\u8fc7\u540e\u518d\u5bf9\u5916\u5c55\u793a\u3002"
         );
 
-        return new PostCreateResultVO(postId, "UPDATED", "更新成功");
+        return new PostCreateResultVO(postId, "PENDING", "修改已提交审核");
     }
 
     @Override
@@ -421,8 +430,20 @@ public class PostServiceImpl implements PostService {
         if (meta.authorUserId() != currentUserId) {
             throw new BusinessException("只能删除自己发布的穿搭内容");
         }
-        jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
-        jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from product_link_click where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from commission_record where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post_activity_binding where post_id = ?", meta.id());
+        jdbcTemplate.update(
+            "delete pcl from post_comment_like pcl join post_comment pc on pc.id = pcl.comment_id where pc.post_id = ?",
+            meta.id()
+        );
+        jdbcTemplate.update("delete from post_comment where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post_like where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post_favorite where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post_image where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post_tag where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from product_link where post_id = ?", meta.id());
+        jdbcTemplate.update("delete from post where id = ?", meta.id());
     }
 
     @Override
@@ -466,23 +487,7 @@ public class PostServiceImpl implements PostService {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
         PostMeta meta = resolvePostMeta(postId);
-        String sql = """
-            select
-                c.id,
-                c.user_id,
-                c.content,
-                c.like_count,
-                c.created_at,
-                u.nickname,
-                coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
-                coalesce(up.avatar_class, '') as avatar_class
-            from post_comment c
-            join app_user u on u.id = c.user_id
-            left join user_profile up on up.user_id = u.id
-            where c.post_id = ? and c.status = 1
-            order by c.created_at desc, c.id desc
-            """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> mapComment(rs, rowNum, viewerUserId), meta.id());
+        return fetchCommentThreads(meta.id(), viewerUserId);
     }
 
     @Override
@@ -490,15 +495,30 @@ public class PostServiceImpl implements PostService {
     public PostCommentVO createComment(String postId, PostCommentCreateRequest request) {
         long currentUserId = UserAuthContext.requireUserId();
         PostMeta meta = resolvePostMeta(postId);
+        ReplyTarget replyTarget = resolveReplyTarget(meta.id(), request.replyToCommentId());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement(
-                "insert into post_comment (post_id, user_id, content, like_count, status, created_at) values (?, ?, ?, 0, 1, now())",
+                """
+                insert into post_comment (
+                    post_id, user_id, content, like_count, status, created_at, parent_comment_id, reply_user_id
+                ) values (?, ?, ?, 0, 1, now(), ?, ?)
+                """,
                 Statement.RETURN_GENERATED_KEYS
             );
             statement.setLong(1, meta.id());
             statement.setLong(2, currentUserId);
             statement.setString(3, request.content());
+            if (replyTarget.parentCommentId() == null) {
+                statement.setNull(4, java.sql.Types.BIGINT);
+            } else {
+                statement.setLong(4, replyTarget.parentCommentId());
+            }
+            if (replyTarget.replyUserId() == null) {
+                statement.setNull(5, java.sql.Types.BIGINT);
+            } else {
+                statement.setLong(5, replyTarget.replyUserId());
+            }
             return statement;
         }, keyHolder);
         jdbcTemplate.update("update post set comment_count = comment_count + 1 where id = ?", meta.id());
@@ -512,7 +532,7 @@ public class PostServiceImpl implements PostService {
             );
         }
         Long commentId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
-        return buildCurrentUserComment(commentId, request.content(), currentUserId);
+        return buildCurrentUserComment(commentId, request.content(), currentUserId, replyTarget);
     }
 
     @Override
@@ -553,6 +573,46 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
+    @Transactional
+    public PostInteractionVO toggleCommentLike(String postId, String commentId) {
+        long currentUserId = UserAuthContext.requireUserId();
+        PostMeta meta = resolvePostMeta(postId);
+        long targetCommentId = parseCommentId(commentId);
+        Integer exists = jdbcTemplate.queryForObject(
+            "select count(*) from post_comment where id = ? and post_id = ? and status = 1",
+            Integer.class,
+            targetCommentId,
+            meta.id()
+        );
+        if (exists == null || exists <= 0) {
+            throw new BusinessException("璇勮涓嶅瓨鍦ㄦ垨宸茶鍒犻櫎");
+        }
+
+        Integer liked = jdbcTemplate.queryForObject(
+            "select count(*) from post_comment_like where comment_id = ? and user_id = ?",
+            Integer.class,
+            targetCommentId,
+            currentUserId
+        );
+        if (liked != null && liked > 0) {
+            jdbcTemplate.update("delete from post_comment_like where comment_id = ? and user_id = ?", targetCommentId, currentUserId);
+            jdbcTemplate.update(
+                "update post_comment set like_count = case when like_count > 0 then like_count - 1 else 0 end where id = ?",
+                targetCommentId
+            );
+            return new PostInteractionVO(false, fetchCommentLikeCount(targetCommentId));
+        }
+
+        jdbcTemplate.update(
+            "insert into post_comment_like (comment_id, user_id, created_at) values (?, ?, now())",
+            targetCommentId,
+            currentUserId
+        );
+        jdbcTemplate.update("update post_comment set like_count = like_count + 1 where id = ?", targetCommentId);
+        return new PostInteractionVO(true, fetchCommentLikeCount(targetCommentId));
+    }
+
+    @Override
     public List<UserCardVO> listLikeUsers(String postId) {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
@@ -561,6 +621,7 @@ public class PostServiceImpl implements PostService {
             select
                 u.id,
                 u.nickname,
+                u.avatar_url,
                 coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                 coalesce(up.avatar_class, '') as avatar_class,
                 up.school_name,
@@ -648,6 +709,7 @@ public class PostServiceImpl implements PostService {
             coalesce(rs.getString("cover_image_url"), ""),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
+            coalesce(rs.getString("avatar_url"), ""),
             coalesce(rs.getString("avatar_class"), ""),
             joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
             coalesce(rs.getString("scene_tag"), "\u6821\u56ed"),
@@ -702,34 +764,161 @@ public class PostServiceImpl implements PostService {
         };
     }
 
-    private PostCommentVO mapComment(ResultSet rs, int rowNum, long viewerUserId) throws SQLException {
-        return new PostCommentVO(
-            String.valueOf(rs.getLong("id")),
-            rs.getString("nickname"),
-            coalesce(rs.getString("avatar_text"), "C"),
-            coalesce(rs.getString("avatar_class"), ""),
-            rs.getString("content"),
-            formatRelativeTime(rs.getTimestamp("created_at")),
-            rs.getInt("like_count"),
-            rs.getLong("user_id") == viewerUserId
-        );
-    }
-
     private UserCardVO mapUserCard(ResultSet rs, int rowNum) throws SQLException {
         return new UserCardVO(
             rs.getLong("id"),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
+            coalesce(rs.getString("avatar_url"), ""),
             coalesce(rs.getString("avatar_class"), ""),
             buildIntro(rs.getString("school_name"), rs.getString("grade_name"), rs.getString("signature")),
             rs.getBoolean("active")
         );
     }
 
-    private PostCommentVO buildCurrentUserComment(Long id, String content, long currentUserId) {
+    private List<PostCommentVO> fetchCommentThreads(long postId, long viewerUserId) {
+        String sql = """
+            select
+                c.id,
+                c.parent_comment_id,
+                c.user_id,
+                c.content,
+                c.like_count,
+                c.created_at,
+                c.reply_user_id,
+                u.nickname,
+                u.avatar_url,
+                coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
+                coalesce(up.avatar_class, '') as avatar_class,
+                coalesce(ru.nickname, '') as reply_to_name,
+                exists(select 1 from post_comment_like pcl where pcl.comment_id = c.id and pcl.user_id = ?) as liked
+            from post_comment c
+            join app_user u on u.id = c.user_id
+            left join user_profile up on up.user_id = u.id
+            left join app_user ru on ru.id = c.reply_user_id
+            where c.post_id = ? and c.status = 1
+            order by coalesce(c.parent_comment_id, c.id) desc,
+                     case when c.parent_comment_id is null then 0 else 1 end asc,
+                     c.created_at asc,
+                     c.id asc
+            """;
+        List<CommentRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> mapCommentRow(rs, viewerUserId), viewerUserId, postId);
+        return buildCommentThreads(rows);
+    }
+
+    private List<PostCommentVO> findCommentPreview(long postId, long viewerUserId) {
+        String sql = """
+            select
+                c.id,
+                c.parent_comment_id,
+                c.user_id,
+                c.content,
+                c.like_count,
+                c.created_at,
+                c.reply_user_id,
+                u.nickname,
+                u.avatar_url,
+                coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
+                coalesce(up.avatar_class, '') as avatar_class,
+                coalesce(ru.nickname, '') as reply_to_name,
+                exists(select 1 from post_comment_like pcl where pcl.comment_id = c.id and pcl.user_id = ?) as liked
+            from post_comment c
+            join app_user u on u.id = c.user_id
+            left join user_profile up on up.user_id = u.id
+            left join app_user ru on ru.id = c.reply_user_id
+            where c.post_id = ? and c.status = 1 and c.parent_comment_id is null
+            order by c.created_at desc, c.id desc
+            limit 3
+            """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> buildCommentVO(mapCommentRow(rs, viewerUserId), Collections.emptyList()), viewerUserId, postId);
+    }
+
+    private CommentRow mapCommentRow(ResultSet rs, long viewerUserId) throws SQLException {
+        return new CommentRow(
+            rs.getLong("id"),
+            rs.getObject("parent_comment_id") == null ? null : rs.getLong("parent_comment_id"),
+            rs.getLong("user_id"),
+            rs.getString("nickname"),
+            coalesce(rs.getString("avatar_text"), "C"),
+            coalesce(rs.getString("avatar_url"), ""),
+            coalesce(rs.getString("avatar_class"), ""),
+            rs.getString("content"),
+            formatRelativeTime(rs.getTimestamp("created_at")),
+            rs.getInt("like_count"),
+            rs.getBoolean("liked"),
+            coalesce(rs.getString("reply_to_name"), ""),
+            rs.getLong("user_id") == viewerUserId
+        );
+    }
+
+    private List<PostCommentVO> buildCommentThreads(List<CommentRow> rows) {
+        Map<Long, PostCommentVO> rootMap = new LinkedHashMap<>();
+        Map<Long, List<PostCommentVO>> pendingReplies = new LinkedHashMap<>();
+        List<PostCommentVO> orphans = new ArrayList<>();
+        for (CommentRow row : rows) {
+            if (row.parentCommentId() == null) {
+                List<PostCommentVO> replies = pendingReplies.remove(row.id());
+                rootMap.put(row.id(), buildCommentVO(row, replies == null ? Collections.emptyList() : replies));
+                continue;
+            }
+            PostCommentVO reply = buildCommentVO(row, Collections.emptyList());
+            PostCommentVO parent = rootMap.get(row.parentCommentId());
+            if (parent == null) {
+                pendingReplies.computeIfAbsent(row.parentCommentId(), key -> new ArrayList<>()).add(reply);
+                continue;
+            }
+            List<PostCommentVO> replies = new ArrayList<>(parent.replies());
+            replies.add(reply);
+            rootMap.put(row.parentCommentId(), copyWithReplies(parent, replies));
+        }
+        for (List<PostCommentVO> replies : pendingReplies.values()) {
+            orphans.addAll(replies);
+        }
+        List<PostCommentVO> result = new ArrayList<>(rootMap.values());
+        result.addAll(orphans);
+        return result;
+    }
+
+    private PostCommentVO buildCommentVO(CommentRow row, List<PostCommentVO> replies) {
+        return new PostCommentVO(
+            String.valueOf(row.id()),
+            row.parentCommentId() == null ? "" : String.valueOf(row.parentCommentId()),
+            row.name(),
+            row.avatar(),
+            row.avatarUrl(),
+            row.avatarClass(),
+            row.text(),
+            row.time(),
+            row.likes(),
+            row.mine(),
+            row.liked(),
+            row.replyToName(),
+            replies == null ? Collections.emptyList() : replies
+        );
+    }
+
+    private PostCommentVO copyWithReplies(PostCommentVO comment, List<PostCommentVO> replies) {
+        return new PostCommentVO(
+            comment.id(),
+            comment.parentId(),
+            comment.name(),
+            comment.avatar(),
+            comment.avatarUrl(),
+            comment.avatarClass(),
+            comment.text(),
+            comment.time(),
+            comment.likes(),
+            comment.mine(),
+            comment.liked(),
+            comment.replyToName(),
+            replies
+        );
+    }
+
+    private PostCommentVO buildCurrentUserComment(Long id, String content, long currentUserId, ReplyTarget replyTarget) {
         return jdbcTemplate.queryForObject(
             """
-            select u.nickname, coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
+            select u.nickname, u.avatar_url, coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                    coalesce(up.avatar_class, '') as avatar_class
             from app_user u
             left join user_profile up on up.user_id = u.id
@@ -737,16 +926,58 @@ public class PostServiceImpl implements PostService {
             """,
             (rs, rowNum) -> new PostCommentVO(
                 String.valueOf(id == null ? 0 : id),
+                replyTarget.parentCommentId() == null ? "" : String.valueOf(replyTarget.parentCommentId()),
                 rs.getString("nickname"),
                 coalesce(rs.getString("avatar_text"), "C"),
+                coalesce(rs.getString("avatar_url"), ""),
                 coalesce(rs.getString("avatar_class"), "soft"),
                 content,
                 "\u521a\u521a",
                 0,
-                true
+                true,
+                false,
+                replyTarget.replyToName(),
+                Collections.emptyList()
             ),
             currentUserId
         );
+    }
+
+    private ReplyTarget resolveReplyTarget(long postId, String replyToCommentId) {
+        String normalizedReplyId = normalizeOptionalText(replyToCommentId);
+        if (normalizedReplyId == null) {
+            return new ReplyTarget(null, null, "");
+        }
+        long targetCommentId = parseCommentId(normalizedReplyId);
+        ReplyTarget target = jdbcTemplate.query(
+            """
+            select c.id, c.parent_comment_id, c.user_id, u.nickname
+            from post_comment c
+            join app_user u on u.id = c.user_id
+            where c.id = ? and c.post_id = ? and c.status = 1
+            limit 1
+            """,
+            rs -> rs.next() ? new ReplyTarget(
+                rs.getObject("parent_comment_id") == null ? rs.getLong("id") : rs.getLong("parent_comment_id"),
+                rs.getLong("user_id"),
+                rs.getString("nickname")
+            ) : null,
+            targetCommentId,
+            postId
+        );
+        if (target == null) {
+            throw new BusinessException("璇勮涓嶅瓨鍦ㄦ垨宸茶鍒犻櫎");
+        }
+        return target;
+    }
+
+    private int fetchCommentLikeCount(long commentId) {
+        Integer count = jdbcTemplate.queryForObject(
+            "select like_count from post_comment where id = ?",
+            Integer.class,
+            commentId
+        );
+        return count == null ? 0 : count;
     }
 
     private long parseCommentId(String commentId) {
@@ -803,7 +1034,7 @@ public class PostServiceImpl implements PostService {
         }
     }
 
-    private void upsertProductLink(long postId, String productName, String productLink, String budgetTag) {
+    private void upsertProductLink(long postId, String productName, String productLink, BigDecimal productPrice) {
         Integer exists = jdbcTemplate.queryForObject(
             "select count(*) from product_link where post_id = ?",
             Integer.class,
@@ -820,7 +1051,7 @@ public class PostServiceImpl implements PostService {
                 productName,
                 detectPlatform(productLink),
                 productLink,
-                estimatePrice(budgetTag),
+                productPrice,
                 DEFAULT_INCENTIVE_TIP,
                 DEFAULT_GUIDE_TIP,
                 postId
@@ -838,7 +1069,7 @@ public class PostServiceImpl implements PostService {
             productName,
             detectPlatform(productLink),
             productLink,
-            estimatePrice(budgetTag),
+            productPrice,
             DEFAULT_INCENTIVE_TIP,
             DEFAULT_GUIDE_TIP
         );
@@ -902,11 +1133,39 @@ public class PostServiceImpl implements PostService {
 
     private int fetchProductClickCount(long postId) {
         Integer count = jdbcTemplate.queryForObject(
-            "select count(*) from product_link_click where post_id = ?",
+            """
+            select count(*) from (
+                select concat('u:', click_user_id) as viewer_key
+                from product_link_click
+                where post_id = ? and click_user_id is not null
+                group by click_user_id
+                union all
+                select concat('g:', id) as viewer_key
+                from product_link_click
+                where post_id = ? and click_user_id is null
+            ) t
+            """,
             Integer.class,
+            postId,
             postId
         );
         return count == null ? 0 : count;
+    }
+
+    private boolean hasRecentTrackedJump(long postId, long currentUserId) {
+        Integer count = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from product_link_click
+            where post_id = ?
+              and click_user_id = ?
+              and created_at >= date_sub(now(), interval 12 hour)
+            """,
+            Integer.class,
+            postId,
+            currentUserId
+        );
+        return count != null && count > 0;
     }
 
     private List<String> findHighlights(String postCode) {
@@ -976,6 +1235,7 @@ public class PostServiceImpl implements PostService {
         List<String> imageUrls = sanitizeValues(request.imageUrls(), 9, "图片最多 9 张");
         List<String> tags = sanitizeValues(request.tags(), 0, "");
         String productLink = normalizeRequiredText(request.productLink(), "商品链接不能为空");
+        BigDecimal productPrice = normalizeRequiredPrice(request.productPrice());
         String activityId = normalizeOptionalText(request.activityId());
 
         if (imageUrls.isEmpty()) {
@@ -985,7 +1245,7 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("请至少选择一个标签");
         }
 
-        return new PostCreateRequest(title, desc, imageUrls, tags, productLink, activityId);
+        return new PostCreateRequest(title, desc, imageUrls, tags, productLink, productPrice, activityId);
     }
 
     private String pickTag(List<String> tags, Set<String> candidates, String fallback) {
@@ -1021,6 +1281,26 @@ public class PostServiceImpl implements PostService {
         String normalized = normalizeOptionalText(value);
         if (normalized == null) {
             throw new BusinessException(message);
+        }
+        return normalized;
+    }
+
+    private BigDecimal normalizeRequiredPrice(BigDecimal value) {
+        if (value == null) {
+            throw new BusinessException("\u5546\u54c1\u4ef7\u683c\u4e0d\u80fd\u4e3a\u7a7a");
+        }
+        BigDecimal normalized = value.stripTrailingZeros();
+        if (normalized.scale() < 0) {
+            normalized = normalized.setScale(0);
+        }
+        if (normalized.scale() > 2) {
+            throw new BusinessException("\u5546\u54c1\u4ef7\u683c\u6700\u591a\u4fdd\u7559 2 \u4f4d\u5c0f\u6570");
+        }
+        if (normalized.compareTo(new BigDecimal("0.01")) < 0) {
+            throw new BusinessException("\u5546\u54c1\u4ef7\u683c\u5fc5\u987b\u5927\u4e8e 0");
+        }
+        if (normalized.compareTo(new BigDecimal("99999999.99")) > 0) {
+            throw new BusinessException("\u5546\u54c1\u4ef7\u683c\u8d85\u51fa\u652f\u6301\u8303\u56f4");
         }
         return normalized;
     }
@@ -1071,33 +1351,6 @@ public class PostServiceImpl implements PostService {
         return "外部平台";
     }
 
-    private BigDecimal estimatePrice(String budgetTag) {
-        if (budgetTag == null || budgetTag.isBlank()) {
-            return new BigDecimal("129");
-        }
-        if (budgetTag.endsWith("+")) {
-            String number = budgetTag.substring(0, budgetTag.length() - 1);
-            try {
-                return new BigDecimal(number).add(new BigDecimal("29"));
-            } catch (NumberFormatException exception) {
-                return new BigDecimal("229");
-            }
-        }
-        if (budgetTag.contains("-")) {
-            String[] parts = budgetTag.split("-");
-            if (parts.length == 2) {
-                try {
-                    BigDecimal low = new BigDecimal(parts[0].trim());
-                    BigDecimal high = new BigDecimal(parts[1].trim());
-                    return low.add(high).divide(new BigDecimal("2"), 0, RoundingMode.HALF_UP);
-                } catch (NumberFormatException ignored) {
-                    return new BigDecimal("129");
-                }
-            }
-        }
-        return new BigDecimal("129");
-    }
-
     private String formatPrice(BigDecimal amount) {
         if (amount == null) {
             return "￥0";
@@ -1145,6 +1398,26 @@ public class PostServiceImpl implements PostService {
 
     private String coalesce(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private record CommentRow(
+        long id,
+        Long parentCommentId,
+        long userId,
+        String name,
+        String avatar,
+        String avatarUrl,
+        String avatarClass,
+        String text,
+        String time,
+        int likes,
+        boolean liked,
+        String replyToName,
+        boolean mine
+    ) {
+    }
+
+    private record ReplyTarget(Long parentCommentId, Long replyUserId, String replyToName) {
     }
 
     private record PostMeta(long id, long authorUserId, String title, int status, int auditStatus) {

@@ -9,6 +9,7 @@ public record PostCardVO(
     String coverImageUrl,
     String user,
     String avatar,
+    String avatarUrl,
     String avatarClass,
     String school,
     String scene,

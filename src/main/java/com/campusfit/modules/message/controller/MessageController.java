@@ -40,4 +40,14 @@ public class MessageController {
     public ApiResponse<Integer> markAllRead() {
         return ApiResponse.success("\u5df2\u5b8c\u6210\u5168\u90e8\u5df2\u8bfb", messageService.markAllRead());
     }
+
+    @PostMapping("/{messageId}/delete")
+    public ApiResponse<Boolean> delete(@PathVariable String messageId) {
+        return ApiResponse.success("已删除消息", messageService.deleteMessage(messageId));
+    }
+
+    @PostMapping("/delete-read")
+    public ApiResponse<Integer> deleteRead() {
+        return ApiResponse.success("已删除全部已读消息", messageService.deleteReadMessages());
+    }
 }

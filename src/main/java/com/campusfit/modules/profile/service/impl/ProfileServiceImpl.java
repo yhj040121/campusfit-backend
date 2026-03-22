@@ -45,6 +45,7 @@ public class ProfileServiceImpl implements ProfileService {
         String sql = """
             select
                 u.nickname,
+                u.avatar_url,
                 coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                 up.school_name,
                 up.grade_name,
@@ -62,6 +63,7 @@ public class ProfileServiceImpl implements ProfileService {
             return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new ProfileSummaryVO(
                 rs.getString("nickname"),
                 rs.getString("avatar_text"),
+                rs.getString("avatar_url"),
                 joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
                 coalesce(rs.getString("signature"), "简单介绍一下你的穿搭风格吧。"),
                 rs.getInt("following_count"),
@@ -79,7 +81,7 @@ public class ProfileServiceImpl implements ProfileService {
     public ProfileEditVO getCurrentProfileForEdit() {
         long currentUserId = UserAuthContext.requireUserId();
         String sql = """
-            select u.phone, u.nickname, up.school_name, up.grade_name, up.signature
+            select u.phone, u.nickname, u.avatar_url, up.school_name, up.grade_name, up.signature
             from app_user u
             left join user_profile up on up.user_id = u.id
             where u.id = ?
@@ -88,6 +90,7 @@ public class ProfileServiceImpl implements ProfileService {
             return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new ProfileEditVO(
                 rs.getString("phone"),
                 rs.getString("nickname"),
+                rs.getString("avatar_url"),
                 rs.getString("school_name"),
                 rs.getString("grade_name"),
                 rs.getString("signature")
@@ -102,14 +105,16 @@ public class ProfileServiceImpl implements ProfileService {
     public ProfileSummaryVO updateCurrentProfile(ProfileUpdateRequest request) {
         long currentUserId = UserAuthContext.requireUserId();
         String nickname = request.nickname().trim();
+        String avatarUrl = normalize(request.avatarUrl());
         String schoolName = normalize(request.schoolName());
         String gradeName = normalize(request.gradeName());
         String signature = normalize(request.signature());
         String avatarText = nickname.substring(0, 1);
 
         int updatedUser = jdbcTemplate.update(
-            "update app_user set nickname = ?, updated_at = now() where id = ?",
+            "update app_user set nickname = ?, avatar_url = ?, updated_at = now() where id = ?",
             nickname,
+            avatarUrl,
             currentUserId
         );
         if (updatedUser == 0) {
@@ -301,6 +306,7 @@ public class ProfileServiceImpl implements ProfileService {
                 select
                     u.id,
                     u.nickname,
+                    u.avatar_url,
                     coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                     coalesce(up.avatar_class, '') as avatar_class,
                     up.school_name,
@@ -324,6 +330,7 @@ public class ProfileServiceImpl implements ProfileService {
             select
                 u.id,
                 u.nickname,
+                u.avatar_url,
                 coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
                 coalesce(up.avatar_class, '') as avatar_class,
                 up.school_name,
@@ -384,6 +391,7 @@ public class ProfileServiceImpl implements ProfileService {
             rs.getLong("id"),
             rs.getString("nickname"),
             coalesce(rs.getString("avatar_text"), "C"),
+            coalesce(rs.getString("avatar_url"), ""),
             coalesce(rs.getString("avatar_class"), ""),
             buildIntro(rs.getString("school_name"), rs.getString("grade_name"), rs.getString("signature")),
             rs.getBoolean("active")

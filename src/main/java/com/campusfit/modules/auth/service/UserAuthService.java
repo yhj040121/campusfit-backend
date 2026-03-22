@@ -2,11 +2,15 @@ package com.campusfit.modules.auth.service;
 
 import com.campusfit.modules.auth.dto.UserLoginRequest;
 import com.campusfit.modules.auth.dto.UserRegisterRequest;
+import com.campusfit.modules.auth.dto.UserSendCodeRequest;
 import com.campusfit.modules.auth.support.UserSession;
 import com.campusfit.modules.auth.vo.UserAuthResultVO;
+import com.campusfit.modules.auth.vo.UserSendCodeVO;
 import com.campusfit.modules.auth.vo.UserSessionVO;
 
 public interface UserAuthService {
+
+    UserSendCodeVO sendCode(UserSendCodeRequest request);
 
     UserAuthResultVO login(UserLoginRequest request);
 
