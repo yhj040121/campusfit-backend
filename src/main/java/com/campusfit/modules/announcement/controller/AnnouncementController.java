@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/announcements")
 public class AnnouncementController {
@@ -16,6 +18,11 @@ public class AnnouncementController {
 
     public AnnouncementController(AnnouncementService announcementService) {
         this.announcementService = announcementService;
+    }
+
+    @GetMapping
+    public ApiResponse<List<AnnouncementVO>> list() {
+        return ApiResponse.success(announcementService.listPublishedHistory());
     }
 
     @GetMapping("/latest")

@@ -11,6 +11,7 @@ public record ActivityItemVO(
     String participation,
     String scene,
     String status,
+    boolean selectable,
     int heat,
     int entries,
     boolean joined,

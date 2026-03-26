@@ -47,8 +47,12 @@ public class ProfileServiceImpl implements ProfileService {
                 u.nickname,
                 u.avatar_url,
                 coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
+                up.cover_image_url,
                 up.school_name,
                 up.grade_name,
+                up.gender,
+                up.email,
+                up.location_name,
                 up.signature,
                 coalesce((select count(*) from user_follow uf where uf.follower_user_id = u.id), 0) as following_count,
                 coalesce((select count(*) from user_follow uf where uf.followee_user_id = u.id), 0) as follower_count,
@@ -64,7 +68,11 @@ public class ProfileServiceImpl implements ProfileService {
                 rs.getString("nickname"),
                 rs.getString("avatar_text"),
                 rs.getString("avatar_url"),
+                rs.getString("cover_image_url"),
                 joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
+                coalesce(normalizeGenderValue(rs.getString("gender")), ""),
+                coalesce(rs.getString("email"), ""),
+                coalesce(rs.getString("location_name"), ""),
                 coalesce(rs.getString("signature"), "简单介绍一下你的穿搭风格吧。"),
                 rs.getInt("following_count"),
                 rs.getInt("follower_count"),
@@ -81,7 +89,7 @@ public class ProfileServiceImpl implements ProfileService {
     public ProfileEditVO getCurrentProfileForEdit() {
         long currentUserId = UserAuthContext.requireUserId();
         String sql = """
-            select u.phone, u.nickname, u.avatar_url, up.school_name, up.grade_name, up.signature
+            select u.phone, u.nickname, u.avatar_url, up.cover_image_url, up.gender, up.email, up.location_name, up.school_name, up.grade_name, up.signature
             from app_user u
             left join user_profile up on up.user_id = u.id
             where u.id = ?
@@ -91,6 +99,10 @@ public class ProfileServiceImpl implements ProfileService {
                 rs.getString("phone"),
                 rs.getString("nickname"),
                 rs.getString("avatar_url"),
+                rs.getString("cover_image_url"),
+                normalizeGenderValue(rs.getString("gender")),
+                rs.getString("email"),
+                rs.getString("location_name"),
                 rs.getString("school_name"),
                 rs.getString("grade_name"),
                 rs.getString("signature")
@@ -106,6 +118,10 @@ public class ProfileServiceImpl implements ProfileService {
         long currentUserId = UserAuthContext.requireUserId();
         String nickname = request.nickname().trim();
         String avatarUrl = normalize(request.avatarUrl());
+        String coverImageUrl = normalize(request.coverImageUrl());
+        String gender = normalizeGenderValue(request.gender());
+        String email = normalize(request.email());
+        String locationName = normalize(request.locationName());
         String schoolName = normalize(request.schoolName());
         String gradeName = normalize(request.gradeName());
         String signature = normalize(request.signature());
@@ -128,22 +144,30 @@ public class ProfileServiceImpl implements ProfileService {
         );
         if (profileCount != null && profileCount > 0) {
             jdbcTemplate.update(
-                "update user_profile set school_name = ?, grade_name = ?, signature = ?, avatar_text = ?, updated_at = now() where user_id = ?",
+                "update user_profile set school_name = ?, grade_name = ?, signature = ?, avatar_text = ?, cover_image_url = ?, gender = ?, email = ?, location_name = ?, updated_at = now() where user_id = ?",
                 schoolName,
                 gradeName,
                 signature,
                 avatarText,
+                coverImageUrl,
+                gender,
+                email,
+                locationName,
                 currentUserId
             );
         } else {
             jdbcTemplate.update(
-                "insert into user_profile (user_id, school_name, grade_name, signature, avatar_text, avatar_class, like_count, follower_count, following_count, created_at, updated_at) values (?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())",
+                "insert into user_profile (user_id, school_name, grade_name, signature, avatar_text, avatar_class, cover_image_url, gender, email, location_name, like_count, follower_count, following_count, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())",
                 currentUserId,
                 schoolName,
                 gradeName,
                 signature,
                 avatarText,
-                "soft"
+                "soft",
+                coverImageUrl,
+                gender,
+                email,
+                locationName
             );
         }
 
@@ -470,6 +494,17 @@ public class ProfileServiceImpl implements ProfileService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeGenderValue(String value) {
+        String normalized = normalize(value);
+        if ("male".equalsIgnoreCase(normalized)) {
+            return "male";
+        }
+        if ("female".equalsIgnoreCase(normalized)) {
+            return "female";
+        }
+        return null;
     }
 
     private String coalesce(String value, String fallback) {

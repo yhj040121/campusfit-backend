@@ -55,6 +55,12 @@ public class UploadServiceImpl implements UploadService {
         return uploadInternal(file, buildAvatarObjectKey(currentUserId, resolveExtension(file)));
     }
 
+    @Override
+    public UploadImageVO uploadProfileCover(MultipartFile file) {
+        long currentUserId = UserAuthContext.requireUserId();
+        return uploadInternal(file, buildProfileCoverObjectKey(currentUserId, resolveExtension(file)));
+    }
+
     private UploadImageVO uploadInternal(MultipartFile file, String objectKey) {
         validateConfig();
         validateFile(file);
@@ -155,6 +161,19 @@ public class UploadServiceImpl implements UploadService {
             Locale.ROOT,
             "avatars/%s/%04d/%02d/%s.%s",
             ownerSegment,
+            today.getYear(),
+            today.getMonthValue(),
+            UUID.randomUUID().toString().replace("-", ""),
+            extension
+        );
+    }
+
+    private String buildProfileCoverObjectKey(long currentUserId, String extension) {
+        LocalDate today = LocalDate.now();
+        return String.format(
+            Locale.ROOT,
+            "profile-covers/%d/%04d/%02d/%s.%s",
+            currentUserId,
             today.getYear(),
             today.getMonthValue(),
             UUID.randomUUID().toString().replace("-", ""),

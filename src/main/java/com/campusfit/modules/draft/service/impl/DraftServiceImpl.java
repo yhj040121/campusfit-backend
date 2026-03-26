@@ -37,7 +37,7 @@ public class DraftServiceImpl implements DraftService {
 
     private static final String DEFAULT_DRAFT_TITLE = "未命名草稿";
     private static final String DEFAULT_DRAFT_NOTE = "这条草稿还没有补充描述。";
-    private static final String PUBLISH_INCOMPLETE_MESSAGE = "草稿还不能发布，请先补齐标题、描述、标签、商品价格和导购链接";
+    private static final String PUBLISH_INCOMPLETE_MESSAGE = "草稿还不能发布，请先补齐标题、描述、标签和图片";
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
     private static final String DRAFT_SELECT = """
@@ -306,8 +306,7 @@ public class DraftServiceImpl implements DraftService {
     private void validateDraftPublishable(DraftPayload payload) {
         if (isBlank(payload.title()) || DEFAULT_DRAFT_TITLE.equals(payload.title())
             || isBlank(payload.desc())
-            || isBlank(payload.productLink())
-            || payload.productPrice() == null
+            || payload.imageUrls().isEmpty()
             || payload.tags().isEmpty()) {
             throw new BusinessException(PUBLISH_INCOMPLETE_MESSAGE);
         }
@@ -333,6 +332,9 @@ public class DraftServiceImpl implements DraftService {
         ActivityItemVO activity = activityService.findByCode(code);
         if (activity == null) {
             throw new BusinessException("未找到对应活动");
+        }
+        if (!activity.selectable()) {
+            throw new BusinessException("褰撳墠娲诲姩涓嶆敮鎸佸湪鍙戝竷鏃堕€夋嫨");
         }
         return activity.id();
     }

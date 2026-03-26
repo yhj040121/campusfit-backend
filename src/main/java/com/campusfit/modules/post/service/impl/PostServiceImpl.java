@@ -28,6 +28,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -43,6 +44,7 @@ public class PostServiceImpl implements PostService {
     private static final String DEFAULT_INCENTIVE_TIP = "商家推广费会按平台规则拆分为服务费和激励池，创作者激励主要参考互动、质量与合规表现。";
     private static final String DEFAULT_GUIDE_TIP = "请结合预算、使用频率和场景需求理性选购。";
     private static final String DEFAULT_CLICK_TIP = "本次跳转会记录为导购点击，并与点赞、评论、收藏一起影响内容传播分析和后续创作激励。";
+    private static final DateTimeFormatter PUBLISH_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
 
     private static final String CARD_SELECT = """
         select
@@ -79,6 +81,7 @@ public class PostServiceImpl implements PostService {
         join app_user u on u.id = p.user_id
         left join user_profile up on up.user_id = u.id
         left join product_link pl on pl.post_id = p.id and pl.link_status = 1
+            and nullif(trim(pl.product_url), '') is not null
         """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -172,6 +175,7 @@ public class PostServiceImpl implements PostService {
                 p.title,
                 p.subtitle,
                 p.description,
+                p.created_at,
                 p.cover_tag,
                 p.cover_image_url,
                 p.scene_tag,
@@ -187,6 +191,7 @@ public class PostServiceImpl implements PostService {
                 coalesce(up.avatar_class, '') as avatar_class,
                 up.school_name,
                 up.grade_name,
+                pl.product_url,
                 pl.product_name,
                 pl.platform_name,
                 pl.price_amount,
@@ -202,6 +207,7 @@ public class PostServiceImpl implements PostService {
             join app_user u on u.id = p.user_id
             left join user_profile up on up.user_id = u.id
             left join product_link pl on pl.post_id = p.id and pl.link_status = 1
+                and nullif(trim(pl.product_url), '') is not null
             where p.status = 1 and p.audit_status = 1 and p.post_code = ?
             """;
         List<PostDetailVO> list = jdbcTemplate.query(sql, (rs, rowNum) -> new PostDetailVO(
@@ -209,6 +215,7 @@ public class PostServiceImpl implements PostService {
             coalesce(rs.getString("cover_tag"), "校园精选"),
             rs.getString("title"),
             coalesce(rs.getString("subtitle"), buildSubtitle(rs.getString("description"))),
+            formatPublishTime(rs.getTimestamp("created_at")),
             coalesce(rs.getString("description"), "暂时还没有内容介绍。"),
             coalesce(rs.getString("cover_image_url"), ""),
             findImageUrls(rs.getLong("id")),
@@ -224,7 +231,7 @@ public class PostServiceImpl implements PostService {
             rs.getBoolean("followed"),
             coalesce(rs.getString("scene_tag"), "校园"),
             coalesce(rs.getString("style_tag"), "极简"),
-            coalesce(rs.getString("budget_tag"), "100-150"),
+            coalesce(rs.getString("budget_tag"), ""),
             rs.getInt("like_count"),
             rs.getInt("comment_count"),
             rs.getInt("favorite_count"),
@@ -232,6 +239,7 @@ public class PostServiceImpl implements PostService {
             formatPrice(rs.getBigDecimal("price_amount")),
             coalesce(rs.getString("product_name"), rs.getString("title")),
             coalesce(rs.getString("platform_name"), "外部平台"),
+            coalesce(rs.getString("product_url"), ""),
             coalesce(rs.getString("profit_label"), DEFAULT_INCENTIVE_TIP),
             coalesce(rs.getString("guide_tip"), DEFAULT_GUIDE_TIP),
             activityService.findByPostCode(rs.getString("post_code")),
@@ -287,7 +295,7 @@ public class PostServiceImpl implements PostService {
 
         String sceneTag = pickTag(normalizedRequest.tags(), sceneOptions, "\u6821\u56ed");
         String styleTag = pickTag(normalizedRequest.tags(), styleOptions, "\u6781\u7b80");
-        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, "100-150");
+        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, null);
         String subtitle = buildSubtitle(normalizedRequest.desc());
         String coverTag = sceneTag + "\u7a7f\u642d";
         String coverImageUrl = normalizedRequest.imageUrls().isEmpty() ? null : normalizedRequest.imageUrls().get(0);
@@ -349,9 +357,10 @@ public class PostServiceImpl implements PostService {
         }
         String sql = """
             select p.post_code, p.title, p.description, coalesce(pl.product_url, '') as product_url,
-                   pl.price_amount as product_price
+                   nullif(pl.price_amount, 0) as product_price
             from post p
-            left join product_link pl on pl.post_id = p.id
+            left join product_link pl on pl.post_id = p.id and pl.link_status = 1
+                and nullif(trim(pl.product_url), '') is not null
             where p.id = ?
             limit 1
             """;
@@ -383,7 +392,7 @@ public class PostServiceImpl implements PostService {
 
         String sceneTag = pickTag(normalizedRequest.tags(), sceneOptions, "\u6821\u56ed");
         String styleTag = pickTag(normalizedRequest.tags(), styleOptions, "\u6781\u7b80");
-        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, "100-150");
+        String budgetTag = pickTag(normalizedRequest.tags(), budgetOptions, null);
         String subtitle = buildSubtitle(normalizedRequest.desc());
         String coverTag = sceneTag + "\u7a7f\u642d";
         String coverImageUrl = normalizedRequest.imageUrls().isEmpty() ? null : normalizedRequest.imageUrls().get(0);
@@ -702,6 +711,7 @@ public class PostServiceImpl implements PostService {
         String publishStatus = resolvePublishStatus(rs.getInt("status"), rs.getInt("audit_status"));
         return new PostCardVO(
             rs.getString("post_code"),
+            rs.getLong("user_id"),
             coalesce(rs.getString("cover_tag"), "\u6821\u56ed\u7cbe\u9009"),
             rs.getString("title"),
             coalesce(rs.getString("subtitle"), buildSubtitle(rs.getString("description"))),
@@ -714,7 +724,7 @@ public class PostServiceImpl implements PostService {
             joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
             coalesce(rs.getString("scene_tag"), "\u6821\u56ed"),
             coalesce(rs.getString("style_tag"), "\u6781\u7b80"),
-            coalesce(rs.getString("budget_tag"), "100-150"),
+            coalesce(rs.getString("budget_tag"), ""),
             rs.getInt("like_count"),
             rs.getInt("comment_count"),
             rs.getInt("favorite_count"),
@@ -1040,6 +1050,25 @@ public class PostServiceImpl implements PostService {
             Integer.class,
             postId
         );
+        if (productLink == null) {
+            if (exists != null && exists > 0) {
+                jdbcTemplate.update(
+                    """
+                    update product_link
+                    set product_name = ?, platform_name = ?, product_url = '', link_status = 0,
+                        price_amount = 0.00, profit_label = ?, guide_tip = ?, last_checked_at = now()
+                    where post_id = ?
+                    """,
+                    productName,
+                    "外部平台",
+                    DEFAULT_INCENTIVE_TIP,
+                    DEFAULT_GUIDE_TIP,
+                    postId
+                );
+            }
+            return;
+        }
+        BigDecimal safePrice = productPrice == null ? BigDecimal.ZERO : productPrice;
         if (exists != null && exists > 0) {
             jdbcTemplate.update(
                 """
@@ -1051,7 +1080,7 @@ public class PostServiceImpl implements PostService {
                 productName,
                 detectPlatform(productLink),
                 productLink,
-                productPrice,
+                safePrice,
                 DEFAULT_INCENTIVE_TIP,
                 DEFAULT_GUIDE_TIP,
                 postId
@@ -1069,7 +1098,7 @@ public class PostServiceImpl implements PostService {
             productName,
             detectPlatform(productLink),
             productLink,
-            productPrice,
+            safePrice,
             DEFAULT_INCENTIVE_TIP,
             DEFAULT_GUIDE_TIP
         );
@@ -1091,6 +1120,7 @@ public class PostServiceImpl implements PostService {
                 pl.guide_tip
             from post p
             left join product_link pl on pl.post_id = p.id and pl.link_status = 1
+                and nullif(trim(pl.product_url), '') is not null
             where p.status = 1 and p.audit_status = 1 and p.post_code = ?
             limit 1
             """,
@@ -1234,9 +1264,12 @@ public class PostServiceImpl implements PostService {
         String desc = normalizeRequiredText(request.desc(), "描述不能为空");
         List<String> imageUrls = sanitizeValues(request.imageUrls(), 9, "图片最多 9 张");
         List<String> tags = sanitizeValues(request.tags(), 0, "");
-        String productLink = normalizeRequiredText(request.productLink(), "商品链接不能为空");
-        BigDecimal productPrice = normalizeRequiredPrice(request.productPrice());
+        String productLink = normalizeOptionalText(request.productLink());
+        BigDecimal productPrice = normalizeOptionalPrice(request.productPrice());
         String activityId = normalizeOptionalText(request.activityId());
+        if (productLink == null) {
+            productPrice = null;
+        }
 
         if (imageUrls.isEmpty()) {
             throw new BusinessException("请至少上传 1 张图片");
@@ -1285,9 +1318,9 @@ public class PostServiceImpl implements PostService {
         return normalized;
     }
 
-    private BigDecimal normalizeRequiredPrice(BigDecimal value) {
+    private BigDecimal normalizeOptionalPrice(BigDecimal value) {
         if (value == null) {
-            throw new BusinessException("\u5546\u54c1\u4ef7\u683c\u4e0d\u80fd\u4e3a\u7a7a");
+            return null;
         }
         BigDecimal normalized = value.stripTrailingZeros();
         if (normalized.scale() < 0) {
@@ -1352,10 +1385,17 @@ public class PostServiceImpl implements PostService {
     }
 
     private String formatPrice(BigDecimal amount) {
-        if (amount == null) {
-            return "￥0";
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
         }
         return "￥" + amount.stripTrailingZeros().toPlainString();
+    }
+
+    private String formatPublishTime(Timestamp createdAt) {
+        if (createdAt == null) {
+            return "";
+        }
+        return createdAt.toLocalDateTime().format(PUBLISH_TIME_FORMATTER);
     }
 
     private String formatRelativeTime(Timestamp createdAt) {

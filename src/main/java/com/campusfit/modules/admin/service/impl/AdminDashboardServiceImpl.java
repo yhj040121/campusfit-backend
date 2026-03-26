@@ -171,6 +171,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 a.scene_label,
                 a.status_code,
                 a.featured_flag,
+                a.publish_selectable_flag,
                 a.heat_value,
                 a.sort_order,
                 a.status,
@@ -206,6 +207,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 mapActivityStatus(active, statusCode),
                 statusCode,
                 rs.getInt("featured_flag") == 1,
+                rs.getInt("publish_selectable_flag") == 1,
                 rs.getInt("heat_value"),
                 rs.getInt("entry_count"),
                 rs.getInt("sort_order"),
@@ -430,8 +432,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             insert into activity_topic (
                 activity_code, title, badge_label, theme_desc, summary_desc, period_text,
                 reward_desc, participation_desc, scene_label, status_code, featured_flag,
+                publish_selectable_flag,
                 heat_value, sort_order, status, start_time, end_time, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
             """,
             activityCode,
             payload.title(),
@@ -444,6 +447,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             payload.sceneLabel(),
             payload.statusCode(),
             payload.featuredFlag(),
+            payload.publishSelectableFlag(),
             payload.heatValue(),
             payload.sortOrder(),
             payload.status(),
@@ -465,7 +469,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 update activity_topic
                 set title = ?, badge_label = ?, theme_desc = ?, summary_desc = ?, period_text = ?,
                     reward_desc = ?, participation_desc = ?, scene_label = ?, status_code = ?,
-                    featured_flag = ?, heat_value = ?, sort_order = ?, status = ?, start_time = ?,
+                    featured_flag = ?, publish_selectable_flag = ?, heat_value = ?, sort_order = ?, status = ?, start_time = ?,
                     end_time = ?, updated_at = now()
                 where id = ?
                 """,
@@ -479,6 +483,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 payload.sceneLabel(),
                 payload.statusCode(),
                 payload.featuredFlag(),
+                payload.publishSelectableFlag(),
                 payload.heatValue(),
                 payload.sortOrder(),
                 payload.status(),
@@ -760,6 +765,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         int status = normalizeFlag(request.status(), 1);
         String statusCode = normalizeActivityStatusCode(request.statusCode(), status);
         int featuredFlag = status == 0 ? 0 : normalizeFlag(request.featuredFlag(), 0);
+        int publishSelectableFlag = normalizeFlag(request.publishSelectableFlag(), 1);
         int heatValue = normalizeNonNegative(request.heatValue(), 0, "热度值不能为负数");
         int sortOrder = normalizeNonNegative(request.sortOrder(), 0, "活动排序不能为负数");
         LocalDateTime startTime = parseDateTime(request.startTime(), null, "活动开始时间格式不正确");
@@ -778,6 +784,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             sceneLabel,
             statusCode,
             featuredFlag,
+            publishSelectableFlag,
             heatValue,
             sortOrder,
             status,
@@ -1007,6 +1014,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         String sceneLabel,
         String statusCode,
         int featuredFlag,
+        int publishSelectableFlag,
         int heatValue,
         int sortOrder,
         int status,

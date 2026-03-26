@@ -30,14 +30,15 @@ public class ActivityServiceImpl implements ActivityService {
             a.participation_desc,
             a.scene_label,
             a.status_code,
+            a.publish_selectable_flag,
             a.heat_value,
             coalesce(entry_stats.entry_count, 0) as entry_count,
             case
-                when ? > 0 then exists(
+                when ? > 0 and exists(
                     select 1
                     from user_activity_join ua
                     where ua.activity_id = a.id and ua.user_id = ?
-                )
+                ) then true
                 else false
             end as joined
         from activity_topic a
@@ -184,6 +185,7 @@ public class ActivityServiceImpl implements ActivityService {
         if (activityCode == null || activityCode.isBlank()) {
             return;
         }
+        requirePublishSelectableActivity(activityCode);
         long activityId = resolveActivityId(activityCode);
         Integer joinExists = jdbcTemplate.queryForObject(
             "select count(*) from user_activity_join where activity_id = ? and user_id = ?",
@@ -230,10 +232,25 @@ public class ActivityServiceImpl implements ActivityService {
         return activityId;
     }
 
+    private ActivityItemVO requirePublishSelectableActivity(String activityCode) {
+        ActivityItemVO activity = findByCode(activityCode);
+        if (activity == null) {
+            throw new BusinessException("鏈壘鍒板搴旀椿鍔?");
+        }
+        if (!activity.selectable()) {
+            throw new BusinessException("褰撳墠娲诲姩涓嶆敮鎸佸湪鍙戝竷鏃堕€夋嫨");
+        }
+        return activity;
+    }
+
     private ActivityItemVO mapActivity(ResultSet rs) throws SQLException {
         boolean joined = rs.getBoolean("joined");
+        boolean selectable = rs.getInt("publish_selectable_flag") == 1;
         int heat = rs.getInt("heat_value");
         int entries = rs.getInt("entry_count");
+        String statusCopy = selectable
+            ? (joined ? "你已加入活动，可以继续围绕这个专题发布内容" : "报名后可获得更稳定的活动曝光与参与进度")
+            : "该活动当前仅在活动中心展示，发布时不会出现在可选列表中";
         return new ActivityItemVO(
             rs.getString("activity_code"),
             rs.getString("title"),
@@ -245,10 +262,11 @@ public class ActivityServiceImpl implements ActivityService {
             rs.getString("participation_desc"),
             rs.getString("scene_label"),
             resolveStatusText(rs.getString("status_code")),
+            selectable,
             heat,
             entries,
             joined,
-            joined ? "你已加入活动，可以直接带活动继续发布内容" : "报名后可获得更稳定的活动曝光与参与进度",
+            statusCopy,
             "热度 " + heat + " · 已有 " + entries + " 条内容"
         );
     }

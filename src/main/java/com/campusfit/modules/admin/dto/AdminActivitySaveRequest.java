@@ -39,6 +39,7 @@ public record AdminActivitySaveRequest(
     String statusCode,
 
     Integer featuredFlag,
+    Integer publishSelectableFlag,
     Integer heatValue,
     Integer sortOrder,
     Integer status,

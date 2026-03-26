@@ -31,6 +31,8 @@ public class UserAuthServiceImpl implements UserAuthService {
     private static final String DEMO_CODE = "040121";
     private static final String LOGIN_SCENE = "login";
     private static final String REGISTER_SCENE = "register";
+    private static final String LOGIN_TYPE_PASSWORD = "password";
+    private static final String LOGIN_TYPE_CODE = "code";
     private static final String LEGACY_DEFAULT_PASSWORD = "campus123";
     private static final String HASH_PREFIX = "pbkdf2_sha256";
     private static final int HASH_ITERATIONS = 65536;
@@ -74,8 +76,13 @@ public class UserAuthServiceImpl implements UserAuthService {
 
     @Override
     public UserAuthResultVO login(UserLoginRequest request) {
-        validateCode(request.code());
         UserRecord user = requireUserByPhone(request.phone());
+        String loginType = normalizeLoginType(request.loginType(), request.password(), request.code());
+        if (LOGIN_TYPE_CODE.equals(loginType)) {
+            validateCode(request.code());
+            return buildTokenResult(user);
+        }
+
         verifyPassword(user, request.password());
         if (needsPasswordUpgrade(user.passwordHash())) {
             upgradePasswordHash(user.id(), request.password());
@@ -101,6 +108,9 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         String nickname = request.nickname().trim();
         String avatarUrl = normalize(request.avatarUrl());
+        String gender = normalizeGenderValue(request.gender());
+        String email = normalize(request.email());
+        String locationName = normalize(request.locationName());
         String passwordHash = hashPassword(request.password().trim());
 
         GeneratedIdHolder holder = new GeneratedIdHolder();
@@ -127,14 +137,17 @@ public class UserAuthServiceImpl implements UserAuthService {
         jdbcTemplate.update(
             """
             insert into user_profile (
-                user_id, school_name, grade_name, signature, avatar_text, avatar_class,
+                user_id, school_name, grade_name, signature, gender, email, location_name, avatar_text, avatar_class,
                 like_count, follower_count, following_count, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())
             """,
             userId,
             normalize(request.schoolName()),
             normalize(request.gradeName()),
             normalize(request.signature()),
+            gender,
+            email,
+            locationName,
             nickname.substring(0, 1),
             "soft"
         );
@@ -383,8 +396,33 @@ public class UserAuthServiceImpl implements UserAuthService {
         return LOGIN_SCENE.equalsIgnoreCase(normalizedScene) ? LOGIN_SCENE : "auth";
     }
 
+    private String normalizeLoginType(String loginType, String password, String code) {
+        String normalizedType = normalize(loginType);
+        if (LOGIN_TYPE_CODE.equalsIgnoreCase(normalizedType)) {
+            return LOGIN_TYPE_CODE;
+        }
+        if (LOGIN_TYPE_PASSWORD.equalsIgnoreCase(normalizedType)) {
+            return LOGIN_TYPE_PASSWORD;
+        }
+        if (normalize(code) != null && normalize(password) == null) {
+            return LOGIN_TYPE_CODE;
+        }
+        return LOGIN_TYPE_PASSWORD;
+    }
+
     private String buildCodeKey(String phone, String scene) {
         return phone + "#" + scene;
+    }
+
+    private String normalizeGenderValue(String gender) {
+        String normalizedGender = normalize(gender);
+        if ("male".equalsIgnoreCase(normalizedGender)) {
+            return "male";
+        }
+        if ("female".equalsIgnoreCase(normalizedGender)) {
+            return "female";
+        }
+        return null;
     }
 
     private String normalize(String value) {

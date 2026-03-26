@@ -8,4 +8,6 @@ public interface UploadService {
     UploadImageVO uploadImage(MultipartFile file);
 
     UploadImageVO uploadAvatar(MultipartFile file);
+
+    UploadImageVO uploadProfileCover(MultipartFile file);
 }

@@ -1,6 +1,7 @@
 package com.campusfit.modules.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -25,6 +26,13 @@ public record UserRegisterRequest(
     @Size(max = 255, message = "Signature must be within 255 characters")
     String signature,
     @Size(max = 255, message = "Avatar URL must be within 255 characters")
-    String avatarUrl
+    String avatarUrl,
+    @Size(max = 20, message = "Gender must be within 20 characters")
+    String gender,
+    @Email(message = "Email format is invalid")
+    @Size(max = 120, message = "Email must be within 120 characters")
+    String email,
+    @Size(max = 100, message = "Location must be within 100 characters")
+    String locationName
 ) {
 }

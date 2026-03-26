@@ -2,6 +2,7 @@ package com.campusfit.modules.post.vo;
 
 public record PostCardVO(
     String id,
+    Long authorId,
     String coverTag,
     String title,
     String subtitle,

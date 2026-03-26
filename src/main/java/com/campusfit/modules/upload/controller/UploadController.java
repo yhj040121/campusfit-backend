@@ -21,11 +21,16 @@ public class UploadController {
 
     @PostMapping("/images")
     public ApiResponse<UploadImageVO> uploadImage(@RequestParam("file") MultipartFile file) {
-        return ApiResponse.success("图片上传成功", uploadService.uploadImage(file));
+        return ApiResponse.success("Image uploaded", uploadService.uploadImage(file));
     }
 
     @PostMapping("/avatar")
     public ApiResponse<UploadImageVO> uploadAvatar(@RequestParam("file") MultipartFile file) {
-        return ApiResponse.success("头像上传成功", uploadService.uploadAvatar(file));
+        return ApiResponse.success("Avatar uploaded", uploadService.uploadAvatar(file));
+    }
+
+    @PostMapping("/profile-cover")
+    public ApiResponse<UploadImageVO> uploadProfileCover(@RequestParam("file") MultipartFile file) {
+        return ApiResponse.success("Profile cover uploaded", uploadService.uploadProfileCover(file));
     }
 }

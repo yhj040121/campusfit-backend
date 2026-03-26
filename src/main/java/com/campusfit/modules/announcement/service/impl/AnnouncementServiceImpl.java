@@ -24,9 +24,17 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     }
 
     @Override
+    public List<AnnouncementVO> listPublishedHistory() {
+        return jdbcTemplate.query(
+            publishedAnnouncementHistorySelect() + " order by pinned_flag desc, sort_order asc, publish_time desc, id desc",
+            (rs, rowNum) -> mapAnnouncement(rs)
+        );
+    }
+
+    @Override
     public AnnouncementVO getLatestPublished() {
         List<AnnouncementVO> items = jdbcTemplate.query(
-            publishedAnnouncementSelect() + " order by pinned_flag desc, sort_order asc, publish_time desc, id desc limit 1",
+            publishedAnnouncementActiveSelect() + " order by pinned_flag desc, sort_order asc, publish_time desc, id desc limit 1",
             (rs, rowNum) -> mapAnnouncement(rs)
         );
         return items.isEmpty() ? null : items.get(0);
@@ -35,17 +43,17 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     @Override
     public AnnouncementVO getPublishedDetail(Long announcementId) {
         List<AnnouncementVO> items = jdbcTemplate.query(
-            publishedAnnouncementSelect() + " and id = ? limit 1",
+            publishedAnnouncementHistorySelect() + " and id = ? limit 1",
             (rs, rowNum) -> mapAnnouncement(rs),
             announcementId
         );
         if (items.isEmpty()) {
-            throw new BusinessException("公告不存在或已下线");
+            throw new BusinessException("公告不存在或尚未发布");
         }
         return items.get(0);
     }
 
-    private String publishedAnnouncementSelect() {
+    private String publishedAnnouncementHistorySelect() {
         return """
             select
                 id,
@@ -58,8 +66,11 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             from official_announcement
             where status = 1
               and publish_time <= now()
-              and (expire_time is null or expire_time >= now())
             """;
+    }
+
+    private String publishedAnnouncementActiveSelect() {
+        return publishedAnnouncementHistorySelect() + " and (expire_time is null or expire_time >= now())";
     }
 
     private AnnouncementVO mapAnnouncement(ResultSet rs) throws SQLException {

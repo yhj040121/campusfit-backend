@@ -32,6 +32,7 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
         ensurePostDraftColumns();
         ensurePostCommentColumns();
         ensurePostCommentLikeTable();
+        ensureActivityTopicColumns();
         syncDefaultActivities();
         syncDefaultAnnouncement();
     }
@@ -146,6 +147,36 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
         log.info("Created missing post_comment_like table automatically.");
     }
 
+    private void ensureActivityTopicColumns() {
+        if (!tableExists("activity_topic")) {
+            return;
+        }
+        ensureActivityTopicColumn(
+            "publish_selectable_flag",
+            "alter table activity_topic add column publish_selectable_flag tinyint not null default 1 after featured_flag"
+        );
+    }
+
+    private void ensureActivityTopicColumn(String columnName, String alterSql) {
+        Integer columnCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = database()
+              and table_name = 'activity_topic'
+              and column_name = ?
+            """,
+            Integer.class,
+            columnName
+        );
+        if (columnCount != null && columnCount > 0) {
+            return;
+        }
+
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing activity_topic.{} column automatically.", columnName);
+    }
+
     private void syncDefaultActivities() {
         if (!tableExists("activity_topic")) {
             return;
@@ -211,9 +242,9 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
             """
             insert into activity_topic (
                 id, activity_code, title, badge_label, theme_desc, summary_desc, period_text,
-                reward_desc, participation_desc, scene_label, status_code, featured_flag, heat_value,
+                reward_desc, participation_desc, scene_label, status_code, featured_flag, publish_selectable_flag, heat_value,
                 sort_order, status, start_time, end_time, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
             on duplicate key update
                 activity_code = values(activity_code),
                 title = values(title),
@@ -226,6 +257,7 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
                 scene_label = values(scene_label),
                 status_code = values(status_code),
                 featured_flag = values(featured_flag),
+                publish_selectable_flag = values(publish_selectable_flag),
                 heat_value = values(heat_value),
                 sort_order = values(sort_order),
                 status = values(status),
@@ -245,6 +277,7 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
             "校园穿搭",
             "ONGOING",
             1,
+            1,
             1280,
             1,
             1,
@@ -258,9 +291,9 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
             """
             insert into activity_topic (
                 id, activity_code, title, badge_label, theme_desc, summary_desc, period_text,
-                reward_desc, participation_desc, scene_label, status_code, featured_flag, heat_value,
+                reward_desc, participation_desc, scene_label, status_code, featured_flag, publish_selectable_flag, heat_value,
                 sort_order, status, start_time, end_time, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
             on duplicate key update
                 activity_code = values(activity_code),
                 title = values(title),
@@ -273,6 +306,7 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
                 scene_label = values(scene_label),
                 status_code = values(status_code),
                 featured_flag = values(featured_flag),
+                publish_selectable_flag = values(publish_selectable_flag),
                 heat_value = values(heat_value),
                 sort_order = values(sort_order),
                 status = values(status),
@@ -292,6 +326,7 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
             "商家合作",
             "RECRUITING",
             1,
+            0,
             930,
             2,
             1,

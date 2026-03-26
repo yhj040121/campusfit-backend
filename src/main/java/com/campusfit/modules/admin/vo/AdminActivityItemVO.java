@@ -14,6 +14,7 @@ public record AdminActivityItemVO(
     String statusText,
     String statusCode,
     boolean featured,
+    boolean publishSelectable,
     int heat,
     int entries,
     int sortOrder,

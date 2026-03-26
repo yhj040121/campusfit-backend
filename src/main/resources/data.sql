@@ -6,11 +6,11 @@ INSERT INTO app_user (id, phone, nickname, avatar_url, password_hash, status) VA
     (3, '18688882028', '鹿宁', NULL, NULL, 1),
     (4, '18688882029', '安可', NULL, NULL, 1);
 
-INSERT INTO user_profile (id, user_id, school_name, grade_name, signature, avatar_text, avatar_class, like_count, follower_count, following_count) VALUES
-    (1, 1, '华东师范大学', '大三', '分享真实校园穿搭和理性购物推荐。', 'Q', 'soft', 3580, 1240, 198),
-    (2, 2, '上海大学', '大二', '专门收藏适合运动和社团场景的校园穿搭灵感。', 'L', 'soft', 2290, 980, 156),
-    (3, 3, '同济大学', '研一', '偏爱温柔日常和高性价比叠穿单品。', 'L', 'alt', 3110, 760, 132),
-    (4, 4, '复旦大学', '大一', '更关注教室通勤和学生预算内的实用穿搭。', 'A', 'soft', 1870, 540, 88);
+INSERT INTO user_profile (id, user_id, school_name, grade_name, signature, avatar_text, avatar_class, gender, email, location_name, like_count, follower_count, following_count) VALUES
+    (1, 1, '华东师范大学', '大三', '分享真实校园穿搭和理性购物推荐。', 'Q', 'soft', 'female', 'qiaoqiao@campusfit.cn', '上海 徐汇', 3580, 1240, 198),
+    (2, 2, '上海大学', '大二', '专门收藏适合运动和社团场景的校园穿搭灵感。', 'L', 'soft', 'female', 'linxia@campusfit.cn', '上海 宝山', 2290, 980, 156),
+    (3, 3, '同济大学', '研一', '偏爱温柔日常和高性价比叠穿单品。', 'L', 'alt', 'male', 'luning@campusfit.cn', '上海 杨浦', 3110, 760, 132),
+    (4, 4, '复旦大学', '大一', '更关注教室通勤和学生预算内的实用穿搭。', 'A', 'soft', 'secret', 'anke@campusfit.cn', '上海 杨浦', 1870, 540, 88);
 
 INSERT INTO tag_option (id, category, option_value, sort_order, status) VALUES
     (1, 'scene', '早八', 1, 1),
@@ -217,6 +217,65 @@ ON DUPLICATE KEY UPDATE
     updated_by = VALUES(updated_by),
     updated_at = NOW();
 
+INSERT INTO official_announcement (
+    id, title, badge_label, summary, content, status, pinned_flag, sort_order,
+    publish_time, expire_time, created_by, updated_by
+) VALUES
+(
+    2,
+    'CampusFit 2.0 版本升级维护通知',
+    '重要',
+    '为了提供更稳定的校园内容体验，平台将于本周六凌晨进行短时维护升级。',
+    '本次升级预计持续 3 小时，期间将暂停登录、发布和活动报名功能。升级完成后，首页推荐流、活动中心和评论链路都会得到优化，请提前安排使用时间。',
+    1,
+    1,
+    1,
+    DATE_SUB(NOW(), INTERVAL 3 DAY),
+    NULL,
+    '系统运营',
+    '系统运营'
+),
+(
+    3,
+    '秋季校园马拉松报名开启',
+    '活动',
+    '新一届校园马拉松已开放报名，前 500 名同学可领取限定纪念礼包。',
+    '赛事将于下月周末正式开跑，活动中心将持续更新路线安排、签到时间和物料领取须知。欢迎同学们在活动页内完成报名后，再绑定自己的训练打卡内容。',
+    1,
+    0,
+    2,
+    DATE_SUB(NOW(), INTERVAL 8 DAY),
+    DATE_SUB(NOW(), INTERVAL 1 DAY),
+    '系统运营',
+    '系统运营'
+),
+(
+    4,
+    '冬季运动热身指南上线',
+    '资讯',
+    '气温走低后，平台整理了一份更适合校园场景的冬季运动热身建议。',
+    '建议在低温环境下适当延长热身时间，优先激活肩颈、膝踝和核心区域。平台也会在首页推荐中逐步增加更多与“校园跑步”“室内训练”相关的内容专题。',
+    1,
+    0,
+    3,
+    DATE_SUB(NOW(), INTERVAL 15 DAY),
+    NULL,
+    '系统运营',
+    '系统运营'
+)
+ON DUPLICATE KEY UPDATE
+    title = VALUES(title),
+    badge_label = VALUES(badge_label),
+    summary = VALUES(summary),
+    content = VALUES(content),
+    status = VALUES(status),
+    pinned_flag = VALUES(pinned_flag),
+    sort_order = VALUES(sort_order),
+    publish_time = VALUES(publish_time),
+    expire_time = VALUES(expire_time),
+    updated_by = VALUES(updated_by),
+    updated_at = NOW();
+
 INSERT INTO sys_admin_user (id, username, password_hash, role_code, status) VALUES
     (1, 'admin', 'admin123', 'SUPER_ADMIN', 1),
     (2, 'operator', 'operator123', 'CONTENT_OPERATOR', 1),
@@ -240,5 +299,5 @@ ALTER TABLE post_favorite AUTO_INCREMENT = 4;
 ALTER TABLE promotion_slot AUTO_INCREMENT = 3;
 ALTER TABLE campaign AUTO_INCREMENT = 3;
 ALTER TABLE report_record AUTO_INCREMENT = 2;
-ALTER TABLE official_announcement AUTO_INCREMENT = 2;
+ALTER TABLE official_announcement AUTO_INCREMENT = 5;
 ALTER TABLE sys_admin_user AUTO_INCREMENT = 4;

@@ -42,6 +42,11 @@ public class ActivityController {
         return ApiResponse.success(activityService.getMySummary());
     }
 
+    @GetMapping("/{activityCode}")
+    public ApiResponse<ActivityItemVO> getActivityDetail(@PathVariable String activityCode) {
+        return ApiResponse.success(activityService.findByCode(activityCode));
+    }
+
     @PostMapping("/{activityCode}/join-toggle")
     public ApiResponse<ActivityItemVO> toggleJoin(@PathVariable String activityCode) {
         return ApiResponse.success(activityService.toggleJoin(activityCode));

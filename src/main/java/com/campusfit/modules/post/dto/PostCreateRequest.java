@@ -4,7 +4,6 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -20,9 +19,7 @@ public record PostCreateRequest(
     List<String> imageUrls,
     @NotEmpty(message = "请至少选择一个标签")
     List<String> tags,
-    @NotBlank(message = "商品链接不能为空")
     String productLink,
-    @NotNull(message = "商品价格不能为空")
     @DecimalMin(value = "0.01", message = "商品价格必须大于 0")
     @Digits(integer = 8, fraction = 2, message = "商品价格最多支持 8 位整数，并保留 2 位小数")
     BigDecimal productPrice,
