@@ -106,6 +106,17 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
+    public List<PostCardVO> listLiked() {
+        long currentUserId = UserAuthContext.requireUserId();
+        String sql = CARD_SELECT + """
+             join post_like pkl on pkl.post_id = p.id and pkl.user_id = ?
+             where p.status = 1 and p.audit_status = 1
+             order by pkl.created_at desc, pkl.id desc
+            """;
+        return jdbcTemplate.query(sql, this::mapPostCard, currentUserId);
+    }
+
+    @Override
     public List<PostCardVO> listFavorites() {
         long currentUserId = UserAuthContext.requireUserId();
         String sql = CARD_SELECT + """
@@ -1476,3 +1487,6 @@ public class PostServiceImpl implements PostService {
     ) {
     }
 }
+
+
+

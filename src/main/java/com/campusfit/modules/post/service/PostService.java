@@ -19,6 +19,7 @@ public interface PostService {
 
     List<PostCardVO> listMine();
 
+    List<PostCardVO> listLiked();
     List<PostCardVO> listFavorites();
 
     List<PostCardVO> search(String keyword, String scene, String style, String budget);
@@ -55,3 +56,5 @@ public interface PostService {
 
     PostInteractionVO toggleFavorite(String postId);
 }
+
+

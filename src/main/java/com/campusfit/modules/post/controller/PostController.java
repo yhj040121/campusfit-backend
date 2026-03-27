@@ -44,6 +44,11 @@ public class PostController {
         return ApiResponse.success(postService.listMine());
     }
 
+    @GetMapping("/liked")
+    public ApiResponse<List<PostCardVO>> liked() {
+        return ApiResponse.success(postService.listLiked());
+    }
+
     @GetMapping("/favorites")
     public ApiResponse<List<PostCardVO>> favorites() {
         return ApiResponse.success(postService.listFavorites());
@@ -143,3 +148,5 @@ public class PostController {
         return ApiResponse.success(postService.toggleFavorite(postId));
     }
 }
+
+
