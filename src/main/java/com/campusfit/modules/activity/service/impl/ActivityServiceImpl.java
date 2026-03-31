@@ -31,8 +31,8 @@ public class ActivityServiceImpl implements ActivityService {
             a.scene_label,
             a.status_code,
             a.publish_selectable_flag,
-            a.heat_value,
-            coalesce(entry_stats.entry_count, 0) as entry_count,
+            coalesce(activity_stats.heat_value, 0) as heat_value,
+            coalesce(activity_stats.entry_count, 0) as entry_count,
             case
                 when ? > 0 and exists(
                     select 1
@@ -43,12 +43,15 @@ public class ActivityServiceImpl implements ActivityService {
             end as joined
         from activity_topic a
         left join (
-            select pa.activity_id, count(*) as entry_count
+            select
+                pa.activity_id,
+                count(*) as entry_count,
+                coalesce(sum(greatest(coalesce(p.like_count, 0), 0) + greatest(coalesce(p.comment_count, 0), 0)), 0) as heat_value
             from post_activity_binding pa
             join post p on p.id = pa.post_id
             where p.status = 1 and p.audit_status = 1
             group by pa.activity_id
-        ) entry_stats on entry_stats.activity_id = a.id
+        ) activity_stats on activity_stats.activity_id = a.id
         where a.status = 1
         """;
 

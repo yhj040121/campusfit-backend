@@ -30,6 +30,8 @@ public record PostCardVO(
     String publishStatusDesc,
     boolean canViewDetail,
     boolean canShelfDown,
-    boolean canRestore
+    boolean canRestore,
+    boolean canDelete,
+    String deleteBlockedReason
 ) {
 }

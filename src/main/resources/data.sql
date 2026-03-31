@@ -35,13 +35,13 @@ INSERT INTO merchant (id, merchant_name, contact_name, contact_phone, cooperatio
     (2, '基础款研究所', 'Jason', '13800000002', 1, '主打学生日常高频基础款'),
     (3, '动感风格店', 'Helen', '13800000003', 1, '主打运动和社团场景穿搭合作');
 
-INSERT INTO post (id, post_code, user_id, title, subtitle, description, scene_tag, style_tag, budget_tag, cover_tag, cover_image_url, status, audit_status, like_count, comment_count, favorite_count, share_count, created_at) VALUES
-    (1, 'look1', 1, '适合早八和图书馆的清爽叠穿', '蓝白层次干净利落，适合学生日常路线', '白衬衫叠穿浅蓝针织马甲，下装搭配柔和灰色百褶裙，整体轻盈清爽，很适合早课、图书馆自习和校园走动。', '图书馆', '学院风', '100-150', '图书馆精选', NULL, 1, 1, 128, 36, 92, 14, DATE_SUB(NOW(), INTERVAL 6 DAY)),
-    (2, 'look2', 2, '适合社团活动和下午散步的宽松穿搭', '卫衣配工装裤，轻松舒适又有校园活力', '薄荷绿卫衣搭配米白工装裤和运动鞋，适合社团招新、操场拍照和放学后活动，整体轻松不费力。', '社团活动', '宽松休闲', '150-200', '热门穿搭', NULL, 1, 1, 203, 48, 115, 21, DATE_SUB(NOW(), INTERVAL 5 DAY)),
-    (3, 'look3', 3, '校园约会也自然的奶油色温柔搭配', '轻薄开衫搭连衣裙，白色运动鞋让整体更轻松', '奶油色开衫叠搭简约连衣裙，再配上一双白色运动鞋和帆布包，温柔不做作，适合周末约会和校园散步。', '约会', '清新', '150-200', '校园优选', NULL, 1, 1, 176, 31, 142, 19, DATE_SUB(NOW(), INTERVAL 4 DAY)),
-    (4, 'look4', 4, '百元内也能搞定的教室通勤穿搭', '白T和牛仔裙组合，适合高频重复穿着', '简单白T搭配浅色牛仔裙和帆布鞋，是很适合教室、食堂和宿舍楼之间通勤的实用型搭配。', '通勤', '极简', '50-100', '预算友好', NULL, 1, 1, 98, 19, 87, 10, DATE_SUB(NOW(), INTERVAL 3 DAY)),
-    (5, 'look5', 1, '适合校园夜间活动的甜酷叠穿', '衬衫、针织背心和短裙，拍照更出片', '挺括衬衫叠搭针织背心与深色短裙，再配乐福鞋，适合社团夜场、主持活动和校园夜拍。', '社团活动', '甜酷', '150-200', '夜间氛围', NULL, 1, 1, 155, 27, 101, 16, DATE_SUB(NOW(), INTERVAL 2 DAY)),
-    (6, 'look6', 2, '复习周也能保持体面的舒适穿搭', '开衫配阔腿裤，长时间学习更轻松', '低饱和开衫搭配柔软阔腿裤，适合长时间自习、复习周和安静的图书馆场景，舒适同时也不显拖沓。', '早八', '韩系', '100-150', '人气榜单', NULL, 1, 1, 132, 29, 108, 13, DATE_SUB(NOW(), INTERVAL 1 DAY));
+INSERT INTO post (id, post_code, user_id, cooperation_id, title, subtitle, description, scene_tag, style_tag, budget_tag, cover_tag, cover_image_url, status, audit_status, like_count, comment_count, favorite_count, share_count, created_at) VALUES
+    (1, 'look1', 1, NULL, '适合早八和图书馆的清爽叠穿', '蓝白层次干净利落，适合学生日常路线', '白衬衫叠穿浅蓝针织马甲，下装搭配柔和灰色百褶裙，整体轻盈清爽，很适合早课、图书馆自习和校园走动。', '图书馆', '学院风', '100-150', '图书馆精选', NULL, 1, 1, 128, 36, 92, 14, DATE_SUB(NOW(), INTERVAL 6 DAY)),
+    (2, 'look2', 2, NULL, '适合社团活动和下午散步的宽松穿搭', '卫衣配工装裤，轻松舒适又有校园活力', '薄荷绿卫衣搭配米白工装裤和运动鞋，适合社团招新、操场拍照和放学后活动，整体轻松不费力。', '社团活动', '宽松休闲', '150-200', '热门穿搭', NULL, 1, 1, 203, 48, 115, 21, DATE_SUB(NOW(), INTERVAL 5 DAY)),
+    (3, 'look3', 3, NULL, '校园约会也自然的奶油色温柔搭配', '轻薄开衫搭连衣裙，白色运动鞋让整体更轻松', '奶油色开衫叠搭简约连衣裙，再配上一双白色运动鞋和帆布包，温柔不做作，适合周末约会和校园散步。', '约会', '清新', '150-200', '校园优选', NULL, 1, 1, 176, 31, 142, 19, DATE_SUB(NOW(), INTERVAL 4 DAY)),
+    (4, 'look4', 4, NULL, '百元内也能搞定的教室通勤穿搭', '白T和牛仔裙组合，适合高频重复穿着', '简单白T搭配浅色牛仔裙和帆布鞋，是很适合教室、食堂和宿舍楼之间通勤的实用型搭配。', '通勤', '极简', '50-100', '预算友好', NULL, 1, 1, 98, 19, 87, 10, DATE_SUB(NOW(), INTERVAL 3 DAY)),
+    (5, 'look5', 1, NULL, '适合校园夜间活动的甜酷叠穿', '衬衫、针织背心和短裙，拍照更出片', '挺括衬衫叠搭针织背心与深色短裙，再配乐福鞋，适合社团夜场、主持活动和校园夜拍。', '社团活动', '甜酷', '150-200', '夜间氛围', NULL, 1, 1, 155, 27, 101, 16, DATE_SUB(NOW(), INTERVAL 2 DAY)),
+    (6, 'look6', 2, NULL, '复习周也能保持体面的舒适穿搭', '开衫配阔腿裤，长时间学习更轻松', '低饱和开衫搭配柔软阔腿裤，适合长时间自习、复习周和安静的图书馆场景，舒适同时也不显拖沓。', '早八', '韩系', '100-150', '人气榜单', NULL, 1, 1, 132, 29, 108, 13, DATE_SUB(NOW(), INTERVAL 1 DAY));
 
 INSERT INTO post_tag (id, post_id, tag_type, tag_value) VALUES
     (1, 1, 'highlight', '层次清爽'),
@@ -77,15 +77,38 @@ INSERT INTO post_comment (id, post_id, user_id, content, like_count, status, cre
     (3, 1, 4, '如果换成运动鞋，会不会更适合早八？', 8, 1, DATE_SUB(NOW(), INTERVAL 18 MINUTE)),
     (4, 2, 1, '这套确实很适合社团活动拍照。', 10, 1, DATE_SUB(NOW(), INTERVAL 1 HOUR));
 
-INSERT INTO creator_cooperation (id, user_id, merchant_id, cooperation_title, cooperation_status, reward_amount, created_at) VALUES
-    (1, 1, 1, '春季清爽校园穿搭专题', 0, 120.00, DATE_SUB(NOW(), INTERVAL 7 DAY)),
-    (2, 1, 2, '平价通勤基础款合作', 1, 88.00, DATE_SUB(NOW(), INTERVAL 5 DAY)),
-    (3, 1, 3, '社团与运动场景穿搭专题', 1, 60.00, DATE_SUB(NOW(), INTERVAL 3 DAY));
+INSERT INTO creator_cooperation (
+    id, cooperation_code, user_id, merchant_id, cooperation_title, cooperation_desc, cooperation_mode,
+    cooperation_status, reward_amount, target_post_count, target_like_count, deadline_at, accepted_at, created_at, updated_at
+) VALUES
+    (
+        1, 'coop-spring-campus', 1, 1, '春季清爽校园穿搭专题',
+        '管理员发起的春季专题合作，确认后可绑定 1 条通过审核的校园穿搭内容。',
+        'PLATFORM_INVITE', 0, 120.00, 1, 20,
+        DATE_ADD(NOW(), INTERVAL 10 DAY), NULL,
+        DATE_SUB(NOW(), INTERVAL 7 DAY), DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ),
+    (
+        2, 'coop-budget-commute', 1, 2, '平价通勤基础款合作',
+        '面向通勤场景的基础款合作，确认后发布绑定内容即可进入审核与发奖流程。',
+        'PLATFORM_INVITE', 1, 88.00, 1, 30,
+        DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_SUB(NOW(), INTERVAL 5 DAY),
+        DATE_SUB(NOW(), INTERVAL 5 DAY), DATE_SUB(NOW(), INTERVAL 2 DAY)
+    ),
+    (
+        3, 'coop-club-sports', 1, 3, '社团与运动场景穿搭专题',
+        '面向社团与运动场景的合作专题，支持继续绑定并追踪合作进度。',
+        'PLATFORM_INVITE', 1, 60.00, 1, 15,
+        DATE_ADD(NOW(), INTERVAL 14 DAY), DATE_SUB(NOW(), INTERVAL 3 DAY),
+        DATE_SUB(NOW(), INTERVAL 3 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY)
+    );
 
-INSERT INTO commission_record (id, post_id, user_id, income_type, commission_amount, settlement_status, created_at) VALUES
-    (1, 1, 1, '导购佣金', 86.50, 1, DATE_SUB(NOW(), INTERVAL 6 DAY)),
-    (2, 5, 1, '品牌分成', 92.00, 1, DATE_SUB(NOW(), INTERVAL 3 DAY)),
-    (3, 1, 1, '导购佣金', 89.50, 0, DATE_SUB(NOW(), INTERVAL 1 DAY));
+INSERT INTO commission_record (
+    id, post_id, user_id, cooperation_id, income_type, commission_amount, settlement_status, remark, created_at
+) VALUES
+    (1, 1, 1, NULL, '导购佣金', 86.50, 1, '首页导购点击结算', DATE_SUB(NOW(), INTERVAL 6 DAY)),
+    (2, 5, 1, NULL, '品牌分成', 92.00, 1, '品牌推广收益结算', DATE_SUB(NOW(), INTERVAL 3 DAY)),
+    (3, 1, 1, NULL, '导购佣金', 89.50, 0, '待财务确认结算', DATE_SUB(NOW(), INTERVAL 1 DAY));
 
 INSERT INTO message_notification (id, user_id, message_type, title, content, read_status, created_at) VALUES
     (1, 1, '互动', '你的穿搭新增了 18 个收藏', '图书馆那套搭配还在持续获得曝光，建议补充更多亮点标签。', 0, DATE_SUB(NOW(), INTERVAL 1 MINUTE)),
@@ -108,14 +131,6 @@ INSERT INTO post_favorite (id, post_id, user_id, created_at) VALUES
     (1, 1, 2, DATE_SUB(NOW(), INTERVAL 10 HOUR)),
     (2, 1, 3, DATE_SUB(NOW(), INTERVAL 9 HOUR)),
     (3, 3, 1, DATE_SUB(NOW(), INTERVAL 7 HOUR));
-
-INSERT INTO promotion_slot (id, slot_name, slot_position, merchant_id, start_time, end_time, status) VALUES
-    (1, '首页主视觉推广位', 'home_top_banner', 1, NOW(), DATE_ADD(NOW(), INTERVAL 15 DAY), 1),
-    (2, '搜索热词推广位', 'search_hot', 2, NOW(), DATE_ADD(NOW(), INTERVAL 10 DAY), 1);
-
-INSERT INTO campaign (id, campaign_name, campaign_type, merchant_id, start_time, end_time, status) VALUES
-    (1, '春季新生穿搭指南', '内容专题', 1, NOW(), DATE_ADD(NOW(), INTERVAL 20 DAY), 1),
-    (2, '社团活力穿搭周', '品牌活动', 3, NOW(), DATE_ADD(NOW(), INTERVAL 12 DAY), 1);
 
 INSERT INTO report_record (id, reporter_user_id, target_type, target_id, reason, process_status, created_at) VALUES
     (1, 2, 'post', 4, '演示用内容治理样例', 1, DATE_SUB(NOW(), INTERVAL 2 DAY));
@@ -296,8 +311,6 @@ ALTER TABLE message_notification AUTO_INCREMENT = 6;
 ALTER TABLE user_follow AUTO_INCREMENT = 4;
 ALTER TABLE post_like AUTO_INCREMENT = 4;
 ALTER TABLE post_favorite AUTO_INCREMENT = 4;
-ALTER TABLE promotion_slot AUTO_INCREMENT = 3;
-ALTER TABLE campaign AUTO_INCREMENT = 3;
 ALTER TABLE report_record AUTO_INCREMENT = 2;
 ALTER TABLE official_announcement AUTO_INCREMENT = 5;
 ALTER TABLE sys_admin_user AUTO_INCREMENT = 4;

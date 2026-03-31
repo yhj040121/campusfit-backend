@@ -13,6 +13,8 @@ public record ProfileIncentiveCenterVO(
     int pendingCount,
     boolean canWithdraw,
     String withdrawHint,
+    String withdrawMinAmount,
+    String withdrawFeeRate,
     List<ProfileIncentiveRecordVO> settlementRecords,
     List<ProfileWithdrawRequestVO> withdrawRequests
 ) {

@@ -4,11 +4,15 @@ import com.campusfit.common.api.ApiResponse;
 import com.campusfit.config.AdminAuthInterceptor;
 import com.campusfit.modules.admin.dto.AdminActivitySaveRequest;
 import com.campusfit.modules.admin.dto.AdminAnnouncementSaveRequest;
+import com.campusfit.modules.admin.dto.AdminCooperationSaveRequest;
+import com.campusfit.modules.admin.dto.AdminMerchantSaveRequest;
 import com.campusfit.modules.admin.service.AdminAuthService;
 import com.campusfit.modules.admin.service.AdminDashboardService;
 import com.campusfit.modules.admin.support.AdminSession;
 import com.campusfit.modules.admin.vo.AdminActivityItemVO;
 import com.campusfit.modules.admin.vo.AdminAnnouncementItemVO;
+import com.campusfit.modules.admin.vo.AdminCooperationItemVO;
+import com.campusfit.modules.admin.vo.AdminContentAuditDetailVO;
 import com.campusfit.modules.admin.vo.AdminContentAuditItemVO;
 import com.campusfit.modules.admin.vo.AdminDashboardSummaryVO;
 import com.campusfit.modules.admin.vo.AdminMerchantItemVO;
@@ -47,7 +51,7 @@ public class AdminDashboardController {
 
     @GetMapping("/users")
     public ApiResponse<List<AdminUserItemVO>> users(HttpServletRequest request) {
-        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN");
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
         return ApiResponse.success(adminDashboardService.listUsers());
     }
 
@@ -69,6 +73,12 @@ public class AdminDashboardController {
     public ApiResponse<List<AdminContentAuditItemVO>> contentAudit(HttpServletRequest request) {
         adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
         return ApiResponse.success(adminDashboardService.listContentAuditItems());
+    }
+
+    @GetMapping("/content-audit/{postId}")
+    public ApiResponse<AdminContentAuditDetailVO> contentAuditDetail(@PathVariable Long postId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        return ApiResponse.success(adminDashboardService.getContentAuditDetail(postId));
     }
 
     @PostMapping("/content-audit/{postId}/approve")
@@ -136,6 +146,12 @@ public class AdminDashboardController {
         return ApiResponse.success(adminDashboardService.listActivities());
     }
 
+    @GetMapping("/cooperations")
+    public ApiResponse<List<AdminCooperationItemVO>> cooperations(HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR", "FINANCE");
+        return ApiResponse.success(adminDashboardService.listCooperations());
+    }
+
     @PostMapping("/activities")
     public ApiResponse<Void> createActivity(
         @Valid @RequestBody AdminActivitySaveRequest payload,
@@ -157,6 +173,23 @@ public class AdminDashboardController {
         return ApiResponse.success("Activity updated", null);
     }
 
+    @PostMapping("/cooperations")
+    public ApiResponse<Void> createCooperation(
+        @Valid @RequestBody AdminCooperationSaveRequest payload,
+        HttpServletRequest request
+    ) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        adminDashboardService.createCooperation(payload);
+        return ApiResponse.success("Cooperation created", null);
+    }
+
+    @PostMapping("/cooperations/{cooperationId}/cancel")
+    public ApiResponse<Void> cancelCooperation(@PathVariable Long cooperationId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        adminDashboardService.cancelCooperation(cooperationId);
+        return ApiResponse.success("Cooperation cancelled", null);
+    }
+
     @PostMapping("/activities/{activityId}/start")
     public ApiResponse<Void> startActivity(@PathVariable Long activityId, HttpServletRequest request) {
         adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
@@ -171,10 +204,41 @@ public class AdminDashboardController {
         return ApiResponse.success("Activity stopped", null);
     }
 
+    @PostMapping("/cooperations/{cooperationId}/issue-reward")
+    public ApiResponse<Void> issueCooperationReward(@PathVariable Long cooperationId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "FINANCE");
+        adminDashboardService.issueCooperationReward(cooperationId);
+        return ApiResponse.success("Cooperation reward issued", null);
+    }
+
     @GetMapping("/merchants")
     public ApiResponse<List<AdminMerchantItemVO>> merchants(HttpServletRequest request) {
         adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
         return ApiResponse.success(adminDashboardService.listMerchants());
+    }
+
+    @PostMapping("/merchants")
+    public ApiResponse<Void> createMerchant(
+        @Valid @RequestBody AdminMerchantSaveRequest payload,
+        HttpServletRequest request
+    ) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        adminDashboardService.createMerchant(payload);
+        return ApiResponse.success("Merchant created", null);
+    }
+
+    @PostMapping("/merchants/{merchantId}/activate")
+    public ApiResponse<Void> activateMerchant(@PathVariable Long merchantId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        adminDashboardService.activateMerchant(merchantId);
+        return ApiResponse.success("Merchant activated", null);
+    }
+
+    @PostMapping("/merchants/{merchantId}/delete")
+    public ApiResponse<Void> deleteMerchant(@PathVariable Long merchantId, HttpServletRequest request) {
+        adminAuthService.requireAnyRole(currentSession(request), "SUPER_ADMIN", "CONTENT_OPERATOR");
+        adminDashboardService.deleteMerchant(merchantId);
+        return ApiResponse.success("Merchant deleted", null);
     }
 
     @GetMapping("/settlements")

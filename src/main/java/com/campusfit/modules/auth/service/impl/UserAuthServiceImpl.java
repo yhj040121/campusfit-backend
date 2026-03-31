@@ -159,7 +159,7 @@ public class UserAuthServiceImpl implements UserAuthService {
             """,
             userId,
             "系统通知",
-            "欢迎来到 CampusFit",
+            "欢迎来到 青搭",
             "你的账号已经创建成功，去完善资料并开始发布第一条校园穿搭吧。"
         );
 

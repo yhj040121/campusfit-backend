@@ -30,6 +30,8 @@ import java.util.List;
 public class ProfileServiceImpl implements ProfileService {
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final BigDecimal MIN_WITHDRAW_AMOUNT = new BigDecimal("10.00");
+    private static final BigDecimal WITHDRAW_FEE_RATE = new BigDecimal("0.02");
 
     private final JdbcTemplate jdbcTemplate;
     private final UserAuthService userAuthService;
@@ -200,6 +202,8 @@ public class ProfileServiceImpl implements ProfileService {
             .subtract(withdrawTotals.withdrawnAmount())
             .max(BigDecimal.ZERO)
             .setScale(2, RoundingMode.HALF_UP);
+        boolean canWithdraw = availableAmount.compareTo(MIN_WITHDRAW_AMOUNT) >= 0;
+        String withdrawHint = buildWithdrawHint(availableAmount);
         List<ProfileIncentiveRecordVO> settlementRecords = jdbcTemplate.query("""
             select
                 cr.id,
@@ -239,6 +243,8 @@ public class ProfileServiceImpl implements ProfileService {
             """, (rs, rowNum) -> new ProfileWithdrawRequestVO(
             rs.getLong("id"),
             formatCurrency(rs.getBigDecimal("request_amount")),
+            formatCurrency(calculateWithdrawFee(rs.getBigDecimal("request_amount"))),
+            formatCurrency(calculateWithdrawNetAmount(rs.getBigDecimal("request_amount"))),
             mapWithdrawStatus(rs.getInt("request_status")),
             rs.getInt("request_status"),
             formatDateTime(rs.getTimestamp("created_at")),
@@ -254,10 +260,10 @@ public class ProfileServiceImpl implements ProfileService {
             formatCurrency(withdrawTotals.withdrawnAmount()),
             incentiveTotals.settledCount(),
             incentiveTotals.pendingCount(),
-            availableAmount.compareTo(BigDecimal.ZERO) > 0,
-            availableAmount.compareTo(BigDecimal.ZERO) > 0
-                ? "已结算的创作激励可以申请提现，平台审核后会线下打款并同步状态。"
-                : "当前暂无可提现余额，待结算记录在月结算完成后会自动转入可提现。",
+            canWithdraw,
+            withdrawHint,
+            formatCurrency(MIN_WITHDRAW_AMOUNT),
+            WITHDRAW_FEE_RATE.toPlainString(),
             settlementRecords,
             withdrawRequests
         );
@@ -287,6 +293,9 @@ public class ProfileServiceImpl implements ProfileService {
         if (requestAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("提现金额必须大于 0");
         }
+        if (requestAmount.compareTo(MIN_WITHDRAW_AMOUNT) < 0) {
+            throw new BusinessException("提现金额不能低于 10 元");
+        }
         if (requestAmount.compareTo(availableAmount) > 0) {
             throw new BusinessException("提现金额不能超过可提现余额");
         }
@@ -314,6 +323,8 @@ public class ProfileServiceImpl implements ProfileService {
             """, (rs, rowNum) -> new ProfileWithdrawRequestVO(
             rs.getLong("id"),
             formatCurrency(rs.getBigDecimal("request_amount")),
+            formatCurrency(calculateWithdrawFee(rs.getBigDecimal("request_amount"))),
+            formatCurrency(calculateWithdrawNetAmount(rs.getBigDecimal("request_amount"))),
             mapWithdrawStatus(rs.getInt("request_status")),
             rs.getInt("request_status"),
             formatDateTime(rs.getTimestamp("created_at")),
@@ -454,6 +465,30 @@ public class ProfileServiceImpl implements ProfileService {
 
     private BigDecimal safeAmount(BigDecimal amount) {
         return amount == null ? BigDecimal.ZERO : amount;
+    }
+
+    private BigDecimal calculateWithdrawFee(BigDecimal requestAmount) {
+        return safeAmount(requestAmount)
+            .multiply(WITHDRAW_FEE_RATE)
+            .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateWithdrawNetAmount(BigDecimal requestAmount) {
+        return safeAmount(requestAmount)
+            .subtract(calculateWithdrawFee(requestAmount))
+            .max(BigDecimal.ZERO)
+            .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String buildWithdrawHint(BigDecimal availableAmount) {
+        BigDecimal safeAvailableAmount = safeAmount(availableAmount).setScale(2, RoundingMode.HALF_UP);
+        if (safeAvailableAmount.compareTo(MIN_WITHDRAW_AMOUNT) >= 0) {
+            return "已结算收益支持自定义提现吗：最低 10 元，平台收取 2% 手续费。";
+        }
+        if (safeAvailableAmount.compareTo(BigDecimal.ZERO) > 0) {
+            return "当前可提现金额未达到 10 元门槛，累计满 10 元后可申请提现，平台收取 2% 手续费。";
+        }
+        return "当前暂无可提现余额，待结算记录会在月结算完成后自动转入可提现余额。";
     }
 
     private String normalizeSettlementType(String type) {

@@ -20,6 +20,7 @@ public record DraftSaveRequest(
     @DecimalMin(value = "0.01", message = "商品价格必须大于 0")
     @Digits(integer = 8, fraction = 2, message = "商品价格最多支持 8 位整数，并保留 2 位小数")
     BigDecimal productPrice,
-    String activityId
+    String activityId,
+    String cooperationId
 ) {
 }

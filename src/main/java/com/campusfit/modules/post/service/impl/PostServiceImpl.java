@@ -4,6 +4,7 @@ import com.campusfit.common.exception.BusinessException;
 import com.campusfit.common.vo.UserCardVO;
 import com.campusfit.modules.activity.service.ActivityService;
 import com.campusfit.modules.auth.support.UserAuthContext;
+import com.campusfit.modules.cooperation.service.CooperationService;
 import com.campusfit.modules.post.dto.PostCommentCreateRequest;
 import com.campusfit.modules.post.dto.PostCreateRequest;
 import com.campusfit.modules.post.service.PostService;
@@ -45,6 +46,12 @@ public class PostServiceImpl implements PostService {
     private static final String DEFAULT_GUIDE_TIP = "请结合预算、使用频率和场景需求理性选购。";
     private static final String DEFAULT_CLICK_TIP = "本次跳转会记录为导购点击，并与点赞、评论、收藏一起影响内容传播分析和后续创作激励。";
     private static final DateTimeFormatter PUBLISH_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
+    private static final int COOPERATION_STATUS_PENDING = 0;
+    private static final int COOPERATION_STATUS_RUNNING = 1;
+    private static final int COOPERATION_STATUS_REWARD_READY = 2;
+    private static final int COOPERATION_STATUS_REWARD_ISSUED = 3;
+    private static final int COOPERATION_STATUS_ABANDONED = 4;
+    private static final int COOPERATION_DELETE_PROTECTION_DAYS = 30;
 
     private static final String CARD_SELECT = """
         select
@@ -58,6 +65,7 @@ public class PostServiceImpl implements PostService {
             p.cover_image_url,
             p.status,
             p.audit_status,
+            p.cooperation_id,
             p.scene_tag,
             p.style_tag,
             p.budget_tag,
@@ -72,6 +80,10 @@ public class PostServiceImpl implements PostService {
             up.school_name,
             up.grade_name,
             up.signature,
+            cc.cooperation_title,
+            cc.cooperation_status,
+            cc.reward_issued_at,
+            cc.abandoned_at,
             pl.product_name,
             pl.platform_name,
             pl.price_amount,
@@ -80,16 +92,19 @@ public class PostServiceImpl implements PostService {
         from post p
         join app_user u on u.id = p.user_id
         left join user_profile up on up.user_id = u.id
+        left join creator_cooperation cc on cc.id = p.cooperation_id
         left join product_link pl on pl.post_id = p.id and pl.link_status = 1
             and nullif(trim(pl.product_url), '') is not null
         """;
 
     private final JdbcTemplate jdbcTemplate;
     private final ActivityService activityService;
+    private final CooperationService cooperationService;
 
-    public PostServiceImpl(JdbcTemplate jdbcTemplate, ActivityService activityService) {
+    public PostServiceImpl(JdbcTemplate jdbcTemplate, ActivityService activityService, CooperationService cooperationService) {
         this.jdbcTemplate = jdbcTemplate;
         this.activityService = activityService;
+        this.cooperationService = cooperationService;
     }
 
     @Override
@@ -347,6 +362,7 @@ public class PostServiceImpl implements PostService {
         syncPostTags(postId, normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
         upsertProductLink(postId, normalizedRequest.title(), normalizedRequest.productLink(), normalizedRequest.productPrice());
         activityService.bindPostToActivity(postId, currentUserId, normalizedRequest.activityId());
+        cooperationService.bindPostToCooperation(postId, currentUserId, normalizedRequest.cooperationId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
@@ -383,7 +399,8 @@ public class PostServiceImpl implements PostService {
             findTags(meta.id()),
             coalesce(rs.getString("product_url"), ""),
             rs.getBigDecimal("product_price"),
-            activityService.findByPostCode(rs.getString("post_code"))
+            activityService.findByPostCode(rs.getString("post_code")),
+            cooperationService.findByPostCode(rs.getString("post_code"))
         ), meta.id());
     }
 
@@ -430,6 +447,7 @@ public class PostServiceImpl implements PostService {
         syncPostTags(meta.id(), normalizedRequest.tags(), sceneOptions, styleOptions, budgetOptions);
         upsertProductLink(meta.id(), normalizedRequest.title(), normalizedRequest.productLink(), normalizedRequest.productPrice());
         activityService.bindPostToActivity(meta.id(), currentUserId, normalizedRequest.activityId());
+        cooperationService.bindPostToCooperation(meta.id(), currentUserId, normalizedRequest.cooperationId());
 
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
@@ -450,8 +468,22 @@ public class PostServiceImpl implements PostService {
         if (meta.authorUserId() != currentUserId) {
             throw new BusinessException("只能删除自己发布的穿搭内容");
         }
+        DeletePolicy deletePolicy = resolveDeletePolicy(
+            meta.cooperationId(),
+            meta.cooperationTitle(),
+            meta.cooperationStatus(),
+            meta.rewardIssuedAt(),
+            meta.abandonedAt(),
+            meta.title()
+        );
+        if (!deletePolicy.canDelete()) {
+            throw new BusinessException(deletePolicy.blockedReason());
+        }
+        Long cooperationId = meta.cooperationId();
         jdbcTemplate.update("delete from product_link_click where post_id = ?", meta.id());
-        jdbcTemplate.update("delete from commission_record where post_id = ?", meta.id());
+        if (tableExists("commission_record")) {
+            jdbcTemplate.update("delete from commission_record where post_id = ?", meta.id());
+        }
         jdbcTemplate.update("delete from post_activity_binding where post_id = ?", meta.id());
         jdbcTemplate.update(
             "delete pcl from post_comment_like pcl join post_comment pc on pc.id = pcl.comment_id where pc.post_id = ?",
@@ -464,6 +496,7 @@ public class PostServiceImpl implements PostService {
         jdbcTemplate.update("delete from post_tag where post_id = ?", meta.id());
         jdbcTemplate.update("delete from product_link where post_id = ?", meta.id());
         jdbcTemplate.update("delete from post where id = ?", meta.id());
+        cooperationService.syncProgressByCooperationId(cooperationId);
     }
 
     @Override
@@ -482,6 +515,7 @@ public class PostServiceImpl implements PostService {
         }
         jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
         jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
+        cooperationService.syncProgressByCooperationId(meta.cooperationId());
     }
 
     @Override
@@ -500,6 +534,7 @@ public class PostServiceImpl implements PostService {
         }
         jdbcTemplate.update("update post set status = 1, updated_at = now() where id = ?", meta.id());
         jdbcTemplate.update("update product_link set link_status = 1 where post_id = ?", meta.id());
+        cooperationService.syncProgressByCooperationId(meta.cooperationId());
     }
 
     @Override
@@ -680,10 +715,12 @@ public class PostServiceImpl implements PostService {
         if (active) {
             jdbcTemplate.update("delete from post_like where post_id = ? and user_id = ?", meta.id(), currentUserId);
             jdbcTemplate.update("update post set like_count = case when like_count > 0 then like_count - 1 else 0 end where id = ?", meta.id());
+            cooperationService.syncProgressByCooperationId(meta.cooperationId());
             return new PostInteractionVO(false, fetchCount(meta.id(), "like_count"));
         }
         jdbcTemplate.update("insert into post_like (post_id, user_id, created_at) values (?, ?, now())", meta.id(), currentUserId);
         jdbcTemplate.update("update post set like_count = like_count + 1 where id = ?", meta.id());
+        cooperationService.syncProgressByCooperationId(meta.cooperationId());
         if (meta.authorUserId() != currentUserId) {
             jdbcTemplate.update(
                 "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
@@ -720,6 +757,14 @@ public class PostServiceImpl implements PostService {
 
     private PostCardVO mapPostCard(ResultSet rs, int rowNum) throws SQLException {
         String publishStatus = resolvePublishStatus(rs.getInt("status"), rs.getInt("audit_status"));
+        DeletePolicy deletePolicy = resolveDeletePolicy(
+            (Long) rs.getObject("cooperation_id"),
+            rs.getString("cooperation_title"),
+            (Integer) rs.getObject("cooperation_status"),
+            rs.getTimestamp("reward_issued_at"),
+            rs.getTimestamp("abandoned_at"),
+            rs.getString("title")
+        );
         return new PostCardVO(
             rs.getString("post_code"),
             rs.getLong("user_id"),
@@ -750,7 +795,9 @@ public class PostServiceImpl implements PostService {
             resolvePublishStatusDesc(publishStatus),
             "PUBLISHED".equals(publishStatus),
             "PUBLISHED".equals(publishStatus),
-            "OFFLINE".equals(publishStatus)
+            "OFFLINE".equals(publishStatus),
+            deletePolicy.canDelete(),
+            coalesce(deletePolicy.blockedReason(), "")
         );
     }
 
@@ -1240,15 +1287,66 @@ public class PostServiceImpl implements PostService {
         ));
     }
 
+    private boolean hasIssuedCooperationReward(PostMeta meta) {
+        if (meta.cooperationId() == null || !tableExists("commission_record")) {
+            return false;
+        }
+        if (columnExists("commission_record", "cooperation_id")) {
+            Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from commission_record where post_id = ? and cooperation_id is not null",
+                Integer.class,
+                meta.id()
+            );
+            return count != null && count > 0;
+        }
+        if (columnExists("commission_record", "income_type")) {
+            Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from commission_record where post_id = ? and income_type = ?",
+                Integer.class,
+                meta.id(),
+                "合作分成"
+            );
+            return count != null && count > 0;
+        }
+        Integer count = jdbcTemplate.queryForObject(
+            "select count(*) from commission_record where post_id = ?",
+            Integer.class,
+            meta.id()
+        );
+        return count != null && count > 0;
+    }
+
     private PostMeta resolvePostMeta(String postCode) {
         List<PostMeta> list = jdbcTemplate.query(
-            "select id, user_id, title, status, audit_status from post where post_code = ? and audit_status in (0, 1, 2) and status in (0, 1)",
+            """
+            select
+                p.id,
+                p.user_id,
+                p.title,
+                p.status,
+                p.audit_status,
+                p.cooperation_id,
+                cc.cooperation_title,
+                cc.cooperation_status,
+                cc.reward_issued_at,
+                cc.abandoned_at
+            from post p
+            left join creator_cooperation cc on cc.id = p.cooperation_id
+            where p.post_code = ?
+              and p.audit_status in (0, 1, 2)
+              and p.status in (0, 1)
+            """,
             (rs, rowNum) -> new PostMeta(
                 rs.getLong("id"),
                 rs.getLong("user_id"),
                 rs.getString("title"),
                 rs.getInt("status"),
-                rs.getInt("audit_status")
+                rs.getInt("audit_status"),
+                (Long) rs.getObject("cooperation_id"),
+                rs.getString("cooperation_title"),
+                (Integer) rs.getObject("cooperation_status"),
+                rs.getTimestamp("reward_issued_at"),
+                rs.getTimestamp("abandoned_at")
             ),
             postCode
         );
@@ -1267,6 +1365,36 @@ public class PostServiceImpl implements PostService {
         return count == null ? 0 : count;
     }
 
+    private boolean tableExists(String tableName) {
+        Integer count = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.tables
+            where table_schema = database()
+              and table_name = ?
+            """,
+            Integer.class,
+            tableName
+        );
+        return count != null && count > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer count = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = database()
+              and table_name = ?
+              and column_name = ?
+            """,
+            Integer.class,
+            tableName,
+            columnName
+        );
+        return count != null && count > 0;
+    }
+
     private PostCreateRequest normalizeCreateRequest(PostCreateRequest request) {
         if (request == null) {
             throw new BusinessException("发布内容不能为空");
@@ -1278,6 +1406,7 @@ public class PostServiceImpl implements PostService {
         String productLink = normalizeOptionalText(request.productLink());
         BigDecimal productPrice = normalizeOptionalPrice(request.productPrice());
         String activityId = normalizeOptionalText(request.activityId());
+        String cooperationId = normalizeOptionalText(request.cooperationId());
         if (productLink == null) {
             productPrice = null;
         }
@@ -1289,7 +1418,7 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("请至少选择一个标签");
         }
 
-        return new PostCreateRequest(title, desc, imageUrls, tags, productLink, productPrice, activityId);
+        return new PostCreateRequest(title, desc, imageUrls, tags, productLink, productPrice, activityId, cooperationId);
     }
 
     private String pickTag(List<String> tags, Set<String> candidates, String fallback) {
@@ -1409,6 +1538,64 @@ public class PostServiceImpl implements PostService {
         return createdAt.toLocalDateTime().format(PUBLISH_TIME_FORMATTER);
     }
 
+    private DeletePolicy resolveDeletePolicy(
+        Long cooperationId,
+        String cooperationTitle,
+        Integer cooperationStatus,
+        Timestamp rewardIssuedAt,
+        Timestamp abandonedAt,
+        String postTitle
+    ) {
+        if (cooperationId == null) {
+            return DeletePolicy.allow();
+        }
+
+        String normalizedPostTitle = coalesce(postTitle, "未命名作品");
+        String normalizedCooperationTitle = coalesce(cooperationTitle, "当前合作单");
+
+        if (abandonedAt != null || (cooperationStatus != null && cooperationStatus == COOPERATION_STATUS_ABANDONED)) {
+            return DeletePolicy.allow();
+        }
+
+        if (rewardIssuedAt != null || (cooperationStatus != null && cooperationStatus == COOPERATION_STATUS_REWARD_ISSUED)) {
+            if (rewardIssuedAt == null) {
+                return DeletePolicy.block(
+                    "作品《" + normalizedPostTitle + "》已参与合作单《" + normalizedCooperationTitle
+                        + "》，奖励发放时间尚未同步，暂不能删除。"
+                );
+            }
+
+            LocalDateTime deleteAvailableAt = rewardIssuedAt.toLocalDateTime().plusDays(COOPERATION_DELETE_PROTECTION_DAYS);
+            if (!LocalDateTime.now().isBefore(deleteAvailableAt)) {
+                return DeletePolicy.allow();
+            }
+
+            return DeletePolicy.block(
+                "作品《" + normalizedPostTitle + "》已参与合作单《" + normalizedCooperationTitle
+                    + "》，奖励已于 " + formatPublishTime(rewardIssuedAt)
+                    + " 发放，需在 " + deleteAvailableAt.format(PUBLISH_TIME_FORMATTER)
+                    + " 后才能删除。"
+            );
+        }
+
+        return DeletePolicy.block(
+            buildCooperationDeleteBlockedReason(normalizedPostTitle, normalizedCooperationTitle, cooperationStatus)
+        );
+    }
+
+    private String buildCooperationDeleteBlockedReason(String postTitle, String cooperationTitle, Integer cooperationStatus) {
+        String prefix = "作品《" + postTitle + "》已参与合作单《" + cooperationTitle + "》，";
+        if (cooperationStatus == null) {
+            return prefix + "当前合作状态未解除，需在合作单取消后，或奖励发放满30天后才能删除。";
+        }
+        return switch (cooperationStatus) {
+            case COOPERATION_STATUS_PENDING -> prefix + "当前合作邀请尚未取消，暂不能删除。只有合作单取消后，或奖励发放满30天后才能删除。";
+            case COOPERATION_STATUS_RUNNING -> prefix + "合作仍在进行中，暂不能删除。只有合作单取消后，或奖励发放满30天后才能删除。";
+            case COOPERATION_STATUS_REWARD_READY -> prefix + "奖励尚未发放，暂不能删除。只有合作单取消后，或奖励发放满30天后才能删除。";
+            default -> prefix + "当前合作状态未解除，需在合作单取消后，或奖励发放满30天后才能删除。";
+        };
+    }
+
     private String formatRelativeTime(Timestamp createdAt) {
         if (createdAt == null) {
             return "刚刚";
@@ -1471,7 +1658,28 @@ public class PostServiceImpl implements PostService {
     private record ReplyTarget(Long parentCommentId, Long replyUserId, String replyToName) {
     }
 
-    private record PostMeta(long id, long authorUserId, String title, int status, int auditStatus) {
+    private record PostMeta(
+        long id,
+        long authorUserId,
+        String title,
+        int status,
+        int auditStatus,
+        Long cooperationId,
+        String cooperationTitle,
+        Integer cooperationStatus,
+        Timestamp rewardIssuedAt,
+        Timestamp abandonedAt
+    ) {
+    }
+
+    private record DeletePolicy(boolean canDelete, String blockedReason) {
+        private static DeletePolicy allow() {
+            return new DeletePolicy(true, null);
+        }
+
+        private static DeletePolicy block(String blockedReason) {
+            return new DeletePolicy(false, blockedReason);
+        }
     }
 
     private record ProductJumpMeta(

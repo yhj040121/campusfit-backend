@@ -4,6 +4,8 @@ import com.campusfit.common.exception.BusinessException;
 import com.campusfit.modules.activity.service.ActivityService;
 import com.campusfit.modules.activity.vo.ActivityItemVO;
 import com.campusfit.modules.auth.support.UserAuthContext;
+import com.campusfit.modules.cooperation.service.CooperationService;
+import com.campusfit.modules.cooperation.vo.CooperationItemVO;
 import com.campusfit.modules.draft.dto.DraftSaveRequest;
 import com.campusfit.modules.draft.service.DraftService;
 import com.campusfit.modules.draft.vo.DraftItemVO;
@@ -41,7 +43,7 @@ public class DraftServiceImpl implements DraftService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
     private static final String DRAFT_SELECT = """
-        select draft_code, title, description, image_urls_json, tags_json, product_link, product_price, activity_code, updated_at
+        select draft_code, title, description, image_urls_json, tags_json, product_link, product_price, activity_code, cooperation_code, updated_at
         from post_draft
         where status = 1
         """;
@@ -49,17 +51,20 @@ public class DraftServiceImpl implements DraftService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ActivityService activityService;
+    private final CooperationService cooperationService;
     private final PostService postService;
 
     public DraftServiceImpl(
         JdbcTemplate jdbcTemplate,
         ObjectMapper objectMapper,
         ActivityService activityService,
+        CooperationService cooperationService,
         PostService postService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.activityService = activityService;
+        this.cooperationService = cooperationService;
         this.postService = postService;
     }
 
@@ -67,9 +72,10 @@ public class DraftServiceImpl implements DraftService {
     public List<DraftItemVO> listMine() {
         long currentUserId = UserAuthContext.requireUserId();
         Map<String, ActivityItemVO> activityCache = new LinkedHashMap<>();
+        Map<String, CooperationItemVO> cooperationCache = new LinkedHashMap<>();
         return jdbcTemplate.query(
             DRAFT_SELECT + " and user_id = ? order by updated_at desc, draft_code desc",
-            (rs, rowNum) -> toSummaryVO(mapDraftRecord(rs), activityCache),
+            (rs, rowNum) -> toSummaryVO(mapDraftRecord(rs), activityCache, cooperationCache),
             currentUserId
         );
     }
@@ -77,7 +83,7 @@ public class DraftServiceImpl implements DraftService {
     @Override
     public DraftItemVO getDetail(String draftId) {
         long currentUserId = UserAuthContext.requireUserId();
-        return toDetailVO(requireOwnedDraft(draftId, currentUserId), new LinkedHashMap<>());
+        return toDetailVO(requireOwnedDraft(draftId, currentUserId), new LinkedHashMap<>(), new LinkedHashMap<>());
     }
 
     @Override
@@ -97,8 +103,8 @@ public class DraftServiceImpl implements DraftService {
             """
             insert into post_draft (
                 draft_code, user_id, title, description, image_urls_json, tags_json, product_link, product_price,
-                activity_code, status, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, now(), now())
+                activity_code, cooperation_code, status, created_at, updated_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, now(), now())
             """,
             draftCode,
             currentUserId,
@@ -108,10 +114,11 @@ public class DraftServiceImpl implements DraftService {
             writeJson(payload.tags()),
             payload.productLink(),
             payload.productPrice(),
-            payload.activityCode()
+            payload.activityCode(),
+            payload.cooperationCode()
         );
 
-        return toDetailVO(requireOwnedDraft(draftCode, currentUserId), new LinkedHashMap<>());
+        return toDetailVO(requireOwnedDraft(draftCode, currentUserId), new LinkedHashMap<>(), new LinkedHashMap<>());
     }
 
     @Override
@@ -125,7 +132,7 @@ public class DraftServiceImpl implements DraftService {
         requireOwnedDraft(draftId, currentUserId);
 
         updateDraftRow(draftId, currentUserId, payload);
-        return toDetailVO(requireOwnedDraft(draftId, currentUserId), new LinkedHashMap<>());
+        return toDetailVO(requireOwnedDraft(draftId, currentUserId), new LinkedHashMap<>(), new LinkedHashMap<>());
     }
 
     @Override
@@ -152,7 +159,8 @@ public class DraftServiceImpl implements DraftService {
             payload.tags(),
             payload.productLink(),
             payload.productPrice(),
-            payload.activityCode()
+            payload.activityCode(),
+            payload.cooperationCode()
         ));
         softDeleteDraft(draftId, currentUserId);
         return result;
@@ -181,19 +189,33 @@ public class DraftServiceImpl implements DraftService {
             normalize(rs.getString("product_link")),
             rs.getBigDecimal("product_price"),
             normalize(rs.getString("activity_code")),
+            normalize(rs.getString("cooperation_code")),
             rs.getTimestamp("updated_at")
         );
     }
 
-    private DraftItemVO toSummaryVO(DraftRecord draft, Map<String, ActivityItemVO> activityCache) {
-        return buildDraftVO(draft, activityCache, true);
+    private DraftItemVO toSummaryVO(
+        DraftRecord draft,
+        Map<String, ActivityItemVO> activityCache,
+        Map<String, CooperationItemVO> cooperationCache
+    ) {
+        return buildDraftVO(draft, activityCache, cooperationCache, true);
     }
 
-    private DraftItemVO toDetailVO(DraftRecord draft, Map<String, ActivityItemVO> activityCache) {
-        return buildDraftVO(draft, activityCache, false);
+    private DraftItemVO toDetailVO(
+        DraftRecord draft,
+        Map<String, ActivityItemVO> activityCache,
+        Map<String, CooperationItemVO> cooperationCache
+    ) {
+        return buildDraftVO(draft, activityCache, cooperationCache, false);
     }
 
-    private DraftItemVO buildDraftVO(DraftRecord draft, Map<String, ActivityItemVO> activityCache, boolean summaryMode) {
+    private DraftItemVO buildDraftVO(
+        DraftRecord draft,
+        Map<String, ActivityItemVO> activityCache,
+        Map<String, CooperationItemVO> cooperationCache,
+        boolean summaryMode
+    ) {
         String title = summaryMode ? displayTitle(draft.title()) : blankToEmpty(draft.title());
         String desc = blankToEmpty(draft.desc());
         return new DraftItemVO(
@@ -206,7 +228,8 @@ public class DraftServiceImpl implements DraftService {
             blankToEmpty(draft.productLink()),
             draft.productPrice(),
             formatTime(draft.updatedAt()),
-            resolveActivity(draft.activityCode(), activityCache)
+            resolveActivity(draft.activityCode(), activityCache),
+            resolveCooperation(draft.cooperationCode(), cooperationCache)
         );
     }
 
@@ -223,8 +246,22 @@ public class DraftServiceImpl implements DraftService {
         return activity;
     }
 
+    private CooperationItemVO resolveCooperation(String cooperationCode, Map<String, CooperationItemVO> cooperationCache) {
+        String normalizedCode = normalize(cooperationCode);
+        if (normalizedCode == null) {
+            return null;
+        }
+        if (cooperationCache.containsKey(normalizedCode)) {
+            return cooperationCache.get(normalizedCode);
+        }
+        CooperationItemVO cooperation = cooperationService.findByCode(normalizedCode);
+        cooperationCache.put(normalizedCode, cooperation);
+        return cooperation;
+    }
+
     private DraftPayload normalizePayload(DraftSaveRequest request) {
         String activityCode = normalizeActivityCode(request.activityId());
+        String cooperationCode = normalizeCooperationCode(request.cooperationId());
         return new DraftPayload(
             normalize(request.title()),
             normalize(request.desc()),
@@ -232,7 +269,8 @@ public class DraftServiceImpl implements DraftService {
             sanitizeStringList(request.tags()),
             normalize(request.productLink()),
             request.productPrice(),
-            activityCode
+            activityCode,
+            cooperationCode
         );
     }
 
@@ -240,6 +278,9 @@ public class DraftServiceImpl implements DraftService {
         String activityCode = request.activityId() != null
             ? normalizeActivityCode(request.activityId())
             : normalizeExistingActivityCode(draft.activityCode());
+        String cooperationCode = request.cooperationId() != null
+            ? normalizeCooperationCode(request.cooperationId())
+            : normalizeExistingCooperationCode(draft.cooperationCode());
         return new DraftPayload(
             request.title() != null ? normalize(request.title()) : normalize(draft.title()),
             request.desc() != null ? normalize(request.desc()) : normalize(draft.desc()),
@@ -247,12 +288,14 @@ public class DraftServiceImpl implements DraftService {
             request.tags() != null ? sanitizeStringList(request.tags()) : sanitizeStringList(draft.tags()),
             request.productLink() != null ? normalize(request.productLink()) : normalize(draft.productLink()),
             request.productPrice() != null ? request.productPrice() : draft.productPrice(),
-            activityCode
+            activityCode,
+            cooperationCode
         );
     }
 
     private DraftPayload normalizePayload(DraftRecord draft) {
         String activityCode = normalizeExistingActivityCode(draft.activityCode());
+        String cooperationCode = normalizeExistingCooperationCode(draft.cooperationCode());
         return new DraftPayload(
             normalize(draft.title()),
             normalize(draft.desc()),
@@ -260,7 +303,8 @@ public class DraftServiceImpl implements DraftService {
             sanitizeStringList(draft.tags()),
             normalize(draft.productLink()),
             draft.productPrice(),
-            activityCode
+            activityCode,
+            cooperationCode
         );
     }
 
@@ -268,7 +312,7 @@ public class DraftServiceImpl implements DraftService {
         jdbcTemplate.update(
             """
             update post_draft
-            set title = ?, description = ?, image_urls_json = ?, tags_json = ?, product_link = ?, product_price = ?, activity_code = ?, updated_at = now()
+            set title = ?, description = ?, image_urls_json = ?, tags_json = ?, product_link = ?, product_price = ?, activity_code = ?, cooperation_code = ?, updated_at = now()
             where draft_code = ? and user_id = ? and status = 1
             """,
             payload.title(),
@@ -278,6 +322,7 @@ public class DraftServiceImpl implements DraftService {
             payload.productLink(),
             payload.productPrice(),
             payload.activityCode(),
+            payload.cooperationCode(),
             draftId,
             currentUserId
         );
@@ -298,7 +343,8 @@ public class DraftServiceImpl implements DraftService {
         boolean hasTags = !payload.tags().isEmpty();
         boolean hasImages = !payload.imageUrls().isEmpty();
         boolean hasActivity = payload.activityCode() != null;
-        if (!hasTitle && !hasDesc && !hasLink && !hasPrice && !hasTags && !hasImages && !hasActivity) {
+        boolean hasCooperation = payload.cooperationCode() != null;
+        if (!hasTitle && !hasDesc && !hasLink && !hasPrice && !hasTags && !hasImages && !hasActivity && !hasCooperation) {
             throw new BusinessException("草稿内容不能为空");
         }
     }
@@ -346,6 +392,42 @@ public class DraftServiceImpl implements DraftService {
         }
         if (activityService.findByCode(code) == null) {
             throw new BusinessException("草稿绑定的活动已失效，请重新选择活动后再发布");
+        }
+        return code;
+    }
+
+    private String normalizeCooperationCode(String cooperationId) {
+        String code = normalize(cooperationId);
+        if (code == null) {
+            return null;
+        }
+        CooperationItemVO cooperation = cooperationService.findByCode(code);
+        if (cooperation == null) {
+            throw new BusinessException("未找到对应合作单");
+        }
+        if (!cooperation.accepted()) {
+            throw new BusinessException("请先接受合作单，再保存绑定内容");
+        }
+        if (!cooperation.canPublish()) {
+            throw new BusinessException("该合作单当前不能继续绑定新内容");
+        }
+        return cooperation.id();
+    }
+
+    private String normalizeExistingCooperationCode(String cooperationCode) {
+        String code = normalize(cooperationCode);
+        if (code == null) {
+            return null;
+        }
+        CooperationItemVO cooperation = cooperationService.findByCode(code);
+        if (cooperation == null) {
+            throw new BusinessException("草稿绑定的合作单已失效，请重新选择");
+        }
+        if (!cooperation.accepted()) {
+            throw new BusinessException("草稿绑定的合作单尚未接受，请先接受后再发布");
+        }
+        if (!cooperation.canPublish()) {
+            throw new BusinessException("草稿绑定的合作单当前不能继续发布绑定内容，请重新选择");
         }
         return code;
     }
@@ -421,6 +503,7 @@ public class DraftServiceImpl implements DraftService {
         String productLink,
         BigDecimal productPrice,
         String activityCode,
+        String cooperationCode,
         Timestamp updatedAt
     ) {
     }
@@ -432,7 +515,8 @@ public class DraftServiceImpl implements DraftService {
         List<String> tags,
         String productLink,
         BigDecimal productPrice,
-        String activityCode
+        String activityCode,
+        String cooperationCode
     ) {
     }
 }

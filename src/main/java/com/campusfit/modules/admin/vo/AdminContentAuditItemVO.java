@@ -6,6 +6,7 @@ public record AdminContentAuditItemVO(
     String author,
     String scene,
     String productStatus,
+    String cooperationTitle,
     String auditStatus,
     int auditStatusCode,
     String createdAt

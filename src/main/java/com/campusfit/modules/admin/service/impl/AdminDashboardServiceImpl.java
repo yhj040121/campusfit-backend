@@ -3,15 +3,20 @@ package com.campusfit.modules.admin.service.impl;
 import com.campusfit.common.exception.BusinessException;
 import com.campusfit.modules.admin.dto.AdminActivitySaveRequest;
 import com.campusfit.modules.admin.dto.AdminAnnouncementSaveRequest;
+import com.campusfit.modules.admin.dto.AdminCooperationSaveRequest;
+import com.campusfit.modules.admin.dto.AdminMerchantSaveRequest;
 import com.campusfit.modules.admin.service.AdminDashboardService;
 import com.campusfit.modules.admin.vo.AdminActivityItemVO;
 import com.campusfit.modules.admin.vo.AdminAnnouncementItemVO;
+import com.campusfit.modules.admin.vo.AdminCooperationItemVO;
+import com.campusfit.modules.admin.vo.AdminContentAuditDetailVO;
 import com.campusfit.modules.admin.vo.AdminContentAuditItemVO;
 import com.campusfit.modules.admin.vo.AdminDashboardSummaryVO;
 import com.campusfit.modules.admin.vo.AdminMerchantItemVO;
 import com.campusfit.modules.admin.vo.AdminSettlementItemVO;
 import com.campusfit.modules.admin.vo.AdminUserItemVO;
 import com.campusfit.modules.admin.vo.AdminWithdrawRequestItemVO;
+import com.campusfit.modules.cooperation.service.CooperationService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +27,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -37,9 +43,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     );
 
     private final JdbcTemplate jdbcTemplate;
+    private final CooperationService cooperationService;
 
-    public AdminDashboardServiceImpl(JdbcTemplate jdbcTemplate) {
+    public AdminDashboardServiceImpl(JdbcTemplate jdbcTemplate, CooperationService cooperationService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.cooperationService = cooperationService;
     }
 
     @Override
@@ -50,7 +58,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 (select count(*) from post where audit_status = 0) as pending_audits,
                 (select count(*) from product_link_click) as product_clicks,
                 (select coalesce(sum(commission_amount), 0) from commission_record where settlement_status = 0) as estimated_commission,
-                (select count(*) from campaign where status = 1) as active_campaigns
+                (select count(*) from creator_cooperation where cooperation_status in (0, 1, 2)) as active_campaigns
             """;
         return jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new AdminDashboardSummaryVO(
             rs.getInt("today_users"),
@@ -95,11 +103,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 p.title,
                 u.nickname,
                 p.scene_tag,
+                cc.cooperation_title,
                 coalesce(pl.link_status, 0) as link_status,
                 p.audit_status,
                 p.created_at
             from post p
             join app_user u on u.id = p.user_id
+            left join creator_cooperation cc on cc.id = p.cooperation_id
             left join product_link pl on pl.post_id = p.id
             order by case when p.audit_status = 0 then 0 else 1 end, p.created_at desc, p.id desc
             """;
@@ -112,11 +122,116 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 rs.getString("nickname"),
                 coalesce(rs.getString("scene_tag"), "-"),
                 linkStatus == 1 ? "已配置" : "未配置",
+                coalesce(rs.getString("cooperation_title"), "-"),
                 mapAuditStatus(auditStatus),
                 auditStatus,
                 formatDateTime(rs.getTimestamp("created_at"))
             );
         });
+    }
+
+    @Override
+    public AdminContentAuditDetailVO getContentAuditDetail(Long postId) {
+        AdminContentAuditDetailVO detail = jdbcTemplate.query(
+            """
+            select
+                p.id,
+                p.post_code,
+                p.title,
+                p.description,
+                p.cover_tag,
+                p.cover_image_url,
+                p.scene_tag,
+                p.style_tag,
+                p.budget_tag,
+                p.like_count,
+                p.comment_count,
+                p.favorite_count,
+                p.share_count,
+                p.audit_status,
+                p.created_at,
+                u.nickname,
+                u.avatar_url,
+                coalesce(up.avatar_text, substring(u.nickname, 1, 1)) as avatar_text,
+                up.school_name,
+                up.grade_name,
+                cc.cooperation_title,
+                cc.cooperation_status,
+                cc.reward_amount,
+                m.merchant_name,
+                coalesce(pl.link_status, 0) as link_status,
+                pl.product_name,
+                pl.platform_name,
+                pl.product_url,
+                pl.price_amount
+            from post p
+            join app_user u on u.id = p.user_id
+            left join user_profile up on up.user_id = u.id
+            left join creator_cooperation cc on cc.id = p.cooperation_id
+            left join merchant m on m.id = cc.merchant_id
+            left join product_link pl on pl.post_id = p.id
+            where p.id = ?
+            limit 1
+            """,
+            rs -> {
+                if (!rs.next()) {
+                    return null;
+                }
+
+                long resolvedPostId = rs.getLong("id");
+                List<String> imageUrls = new ArrayList<>(findPostImageUrls(resolvedPostId));
+                String coverImageUrl = coalesce(rs.getString("cover_image_url"), "");
+                if (imageUrls.isEmpty() && !coverImageUrl.isBlank()) {
+                    imageUrls.add(coverImageUrl);
+                }
+                if (coverImageUrl.isBlank() && !imageUrls.isEmpty()) {
+                    coverImageUrl = imageUrls.get(0);
+                }
+
+                String productUrl = coalesce(rs.getString("product_url"), "");
+                boolean productConfigured = rs.getInt("link_status") == 1 && !productUrl.isBlank();
+
+                return new AdminContentAuditDetailVO(
+                    resolvedPostId,
+                    rs.getString("post_code"),
+                    rs.getString("title"),
+                    coalesce(rs.getString("description"), "暂无内容描述"),
+                    coalesce(rs.getString("cover_tag"), "内容预览"),
+                    coverImageUrl,
+                    imageUrls,
+                    rs.getString("nickname"),
+                    coalesce(rs.getString("avatar_url"), ""),
+                    coalesce(rs.getString("avatar_text"), "青"),
+                    joinSchool(rs.getString("school_name"), rs.getString("grade_name")),
+                    coalesce(rs.getString("scene_tag"), "未设置"),
+                    coalesce(rs.getString("style_tag"), "未设置"),
+                    coalesce(rs.getString("budget_tag"), "未设置"),
+                    rs.getInt("like_count"),
+                    rs.getInt("comment_count"),
+                    rs.getInt("favorite_count"),
+                    rs.getInt("share_count"),
+                    rs.getString("cooperation_title") != null,
+                    coalesce(rs.getString("cooperation_title"), "-"),
+                    coalesce(rs.getString("merchant_name"), "-"),
+                    rs.getString("cooperation_title") != null ? formatCurrency(rs.getBigDecimal("reward_amount")) : "-",
+                    rs.getString("cooperation_title") != null ? mapCooperationStatus(rs.getInt("cooperation_status")) : "-",
+                    productConfigured ? "已配置" : "未配置",
+                    productConfigured,
+                    productConfigured ? coalesce(rs.getString("product_name"), rs.getString("title")) : "未配置商品链接",
+                    productConfigured ? coalesce(rs.getString("platform_name"), "外部平台") : "-",
+                    productConfigured ? formatPrice(rs.getBigDecimal("price_amount")) : "未填写",
+                    productUrl,
+                    mapAuditStatus(rs.getInt("audit_status")),
+                    rs.getInt("audit_status"),
+                    formatDateTime(rs.getTimestamp("created_at"))
+                );
+            },
+            postId
+        );
+        if (detail == null) {
+            throw new BusinessException("内容不存在");
+        }
+        return detail;
     }
 
     @Override
@@ -172,20 +287,23 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 a.status_code,
                 a.featured_flag,
                 a.publish_selectable_flag,
-                a.heat_value,
+                coalesce(activity_stats.heat_value, 0) as heat_value,
                 a.sort_order,
                 a.status,
                 a.start_time,
                 a.end_time,
-                coalesce(entry_stats.entry_count, 0) as entry_count
+                coalesce(activity_stats.entry_count, 0) as entry_count
             from activity_topic a
             left join (
-                select pa.activity_id, count(*) as entry_count
+                select
+                    pa.activity_id,
+                    count(*) as entry_count,
+                    coalesce(sum(greatest(coalesce(p.like_count, 0), 0) + greatest(coalesce(p.comment_count, 0), 0)), 0) as heat_value
                 from post_activity_binding pa
                 join post p on p.id = pa.post_id
                 where p.status = 1 and p.audit_status = 1
                 group by pa.activity_id
-            ) entry_stats on entry_stats.activity_id = a.id
+            ) activity_stats on activity_stats.activity_id = a.id
             order by case when a.status = 1 then 0 else 1 end,
                      a.sort_order asc,
                      a.id desc
@@ -219,23 +337,108 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     @Override
+    public List<AdminCooperationItemVO> listCooperations() {
+        syncAllCooperationProgress();
+        String sql = """
+            select
+                c.id,
+                c.cooperation_code,
+                c.cooperation_title,
+                c.cooperation_desc,
+                c.cooperation_status,
+                c.reward_amount,
+                c.target_post_count,
+                coalesce(c.target_like_count, 0) as target_like_count,
+                c.deadline_at,
+                c.accepted_at,
+                c.reward_issued_at,
+                u.nickname,
+                m.merchant_name,
+                coalesce(progress.submitted_post_count, 0) as submitted_post_count,
+                coalesce(progress.approved_post_count, 0) as approved_post_count,
+                coalesce(progress.approved_like_count, 0) as approved_like_count
+            from creator_cooperation c
+            join app_user u on u.id = c.user_id
+            join merchant m on m.id = c.merchant_id
+            left join (
+                select
+                    p.cooperation_id,
+                    sum(case when p.status = 1 and p.audit_status in (0, 1) then 1 else 0 end) as submitted_post_count,
+                    sum(case when p.status = 1 and p.audit_status = 1 then 1 else 0 end) as approved_post_count,
+                    coalesce(sum(case when p.status = 1 and p.audit_status = 1 then greatest(coalesce(p.like_count, 0), 0) else 0 end), 0) as approved_like_count
+                from post p
+                where p.cooperation_id is not null
+                group by p.cooperation_id
+            ) progress on progress.cooperation_id = c.id
+            order by
+                case when c.cooperation_status in (0, 1, 2) then 0 else 1 end,
+                c.id desc
+            """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            int statusCode = rs.getInt("cooperation_status");
+            int targetPostCount = Math.max(rs.getInt("target_post_count"), 1);
+            int targetLikeCount = Math.max(rs.getInt("target_like_count"), 0);
+            int approvedPostCount = rs.getInt("approved_post_count");
+            int approvedLikeCount = Math.max(rs.getInt("approved_like_count"), 0);
+            return new AdminCooperationItemVO(
+                rs.getLong("id"),
+                rs.getString("cooperation_code"),
+                formatCooperationDisplayCode(rs.getLong("id")),
+                rs.getString("cooperation_title"),
+                coalesce(rs.getString("cooperation_desc"), ""),
+                rs.getString("nickname"),
+                rs.getString("merchant_name"),
+                mapCooperationStatus(statusCode),
+                statusCode,
+                scaleAmount(rs.getBigDecimal("reward_amount")),
+                targetPostCount,
+                approvedPostCount,
+                rs.getInt("submitted_post_count"),
+                targetLikeCount,
+                approvedLikeCount,
+                formatDateTime(rs.getTimestamp("deadline_at")),
+                formatDateTime(rs.getTimestamp("accepted_at")),
+                formatDateTime(rs.getTimestamp("reward_issued_at")),
+                statusCode != 3
+                    && statusCode != 4
+                    && approvedPostCount >= targetPostCount
+                    && approvedLikeCount >= targetLikeCount,
+                statusCode == 3
+            );
+        });
+    }
+
+    @Override
     public List<AdminMerchantItemVO> listMerchants() {
         String sql = """
             select
                 m.id,
                 m.merchant_name,
                 coalesce(m.contact_name, '-') as contact_name,
-                coalesce((select count(*) from campaign c where c.merchant_id = m.id), 0) as campaign_count,
+                coalesce(m.contact_phone, '-') as contact_phone,
+                coalesce((select count(*) from creator_cooperation cc where cc.merchant_id = m.id and cc.cooperation_status in (0, 1, 2)), 0) as campaign_count,
+                coalesce((select count(*) from creator_cooperation cc where cc.merchant_id = m.id), 0) as cooperation_count,
+                coalesce((select count(*) from creator_cooperation cc where cc.merchant_id = m.id and cc.cooperation_status in (0, 1, 2)), 0) as active_cooperation_count,
+                coalesce((select sum(cc.reward_amount) from creator_cooperation cc where cc.merchant_id = m.id and cc.cooperation_status = 2), 0) as pending_reward_amount,
+                coalesce((select sum(cc.reward_amount) from creator_cooperation cc where cc.merchant_id = m.id and cc.cooperation_status = 3), 0) as issued_reward_amount,
+                m.cooperation_status as cooperation_status_code,
                 case when m.cooperation_status = 1 then '合作中' else '意向商家' end as cooperation_status
             from merchant m
+            where m.deleted_at is null
             order by m.id asc
             """;
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdminMerchantItemVO(
             rs.getLong("id"),
             rs.getString("merchant_name"),
             rs.getString("contact_name"),
+            rs.getString("contact_phone"),
             rs.getInt("campaign_count"),
-            rs.getString("cooperation_status")
+            rs.getInt("cooperation_count"),
+            scaleAmount(rs.getBigDecimal("pending_reward_amount")),
+            scaleAmount(rs.getBigDecimal("issued_reward_amount")),
+            rs.getString("cooperation_status"),
+            rs.getInt("cooperation_status_code"),
+            rs.getInt("active_cooperation_count") == 0
         ));
     }
 
@@ -312,6 +515,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             jdbcTemplate.update("update post set audit_status = 1, status = 1, updated_at = now() where id = ?", postId),
             "内容不存在"
         );
+        cooperationService.syncProgressByPostId(postId);
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             snapshot.userId(),
@@ -329,6 +533,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             jdbcTemplate.update("update post set audit_status = 2, status = 0, updated_at = now() where id = ?", postId),
             "内容不存在"
         );
+        cooperationService.syncProgressByPostId(postId);
         jdbcTemplate.update(
             "insert into message_notification (user_id, message_type, title, content, read_status, created_at) values (?, ?, ?, ?, 0, now())",
             snapshot.userId(),
@@ -533,11 +738,182 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     @Override
+    @Transactional
+    public void createCooperation(AdminCooperationSaveRequest request) {
+        CooperationPayload payload = normalizeCooperationPayload(request);
+        String cooperationCode = generateCooperationCode();
+        jdbcTemplate.update(
+            """
+            insert into creator_cooperation (
+                cooperation_code, user_id, merchant_id, cooperation_title, cooperation_desc, cooperation_mode,
+                cooperation_status, reward_amount, target_post_count, target_like_count, deadline_at, created_at, updated_at
+            ) values (?, ?, ?, ?, ?, 'PLATFORM_INVITE', 0, ?, ?, ?, ?, now(), now())
+            """,
+            cooperationCode,
+            payload.userId(),
+            payload.merchantId(),
+            payload.title(),
+            payload.desc(),
+            payload.rewardAmount(),
+            payload.targetPostCount(),
+            payload.targetLikeCount(),
+            toTimestamp(payload.deadlineAt())
+        );
+        jdbcTemplate.update(
+            """
+            insert into message_notification (user_id, message_type, title, content, read_status, created_at)
+            values (?, ?, ?, ?, 0, now())
+            """,
+            payload.userId(),
+            "合作通知",
+            "你收到新的合作邀请",
+            "合作单《" + payload.title() + "》已创建，请在合作列表中确认并发布绑定内容。"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void createMerchant(AdminMerchantSaveRequest request) {
+        MerchantPayload payload = normalizeMerchantPayload(request);
+        Integer merchantCount = jdbcTemplate.queryForObject(
+            "select count(*) from merchant where merchant_name = ? and deleted_at is null",
+            Integer.class,
+            payload.name()
+        );
+        if (merchantCount != null && merchantCount > 0) {
+            throw new BusinessException("商家名称已存在");
+        }
+        jdbcTemplate.update(
+            """
+            insert into merchant (
+                merchant_name, contact_name, contact_phone, cooperation_status, remark, created_at
+            ) values (?, ?, ?, ?, ?, now())
+            """,
+            payload.name(),
+            payload.contact(),
+            payload.phone(),
+            payload.status(),
+            payload.remark()
+        );
+    }
+
+    @Override
+    @Transactional
+    public void activateMerchant(Long merchantId) {
+        MerchantStatusSnapshot snapshot = requireMerchantStatusSnapshot(merchantId);
+        if (snapshot.statusCode() == 1) {
+            return;
+        }
+        requireAffected(
+            jdbcTemplate.update(
+                """
+                update merchant
+                set cooperation_status = 1
+                where id = ?
+                  and deleted_at is null
+                """,
+                merchantId
+            ),
+            "商家不存在"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void cancelCooperation(Long cooperationId) {
+        cooperationService.syncProgressByCooperationId(cooperationId);
+        CooperationManageSnapshot snapshot = requireCancelableCooperation(cooperationId);
+        jdbcTemplate.update(
+            """
+            update creator_cooperation
+            set cooperation_status = 4,
+                abandoned_at = now(),
+                updated_at = now()
+            where id = ?
+            """,
+            cooperationId
+        );
+        jdbcTemplate.update(
+            """
+            insert into message_notification (user_id, message_type, title, content, read_status, created_at)
+            values (?, ?, ?, ?, 0, now())
+            """,
+            snapshot.userId(),
+            "合作通知",
+            snapshot.acceptedAt() == null ? "合作邀请已取消" : "合作单已取消",
+            snapshot.acceptedAt() == null
+                ? "合作邀请《" + snapshot.title() + "》已由管理员取消，你无需再处理这条合作邀请。"
+                : "合作单《" + snapshot.title() + "》已由管理员取消，后续不再计入合作进度与奖励结算。"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void deleteMerchant(Long merchantId) {
+        MerchantDeleteSnapshot snapshot = requireDeletableMerchant(merchantId);
+        if (snapshot.activeCooperationCount() > 0) {
+            throw new BusinessException("该商家仍有进行中的合作，暂不能删除");
+        }
+        requireAffected(
+            jdbcTemplate.update(
+                """
+                update merchant
+                set deleted_at = now()
+                where id = ?
+                  and deleted_at is null
+                """,
+                merchantId
+            ),
+            "商家不存在"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void issueCooperationReward(Long cooperationId) {
+        cooperationService.syncProgressByCooperationId(cooperationId);
+        CooperationRewardSnapshot snapshot = requireRewardableCooperation(cooperationId);
+        if (!tableExists("commission_record")) {
+            throw new BusinessException("奖励记录表不存在，请先完成数据库升级");
+        }
+        Long approvedPostId = findLatestApprovedCooperationPostId(cooperationId);
+        if (approvedPostId == null) {
+            throw new BusinessException("该合作单暂无已通过审核的绑定内容");
+        }
+        Integer recordCount = countExistingCooperationRewardRecords(cooperationId, approvedPostId);
+        if (recordCount != null && recordCount > 0) {
+            throw new BusinessException("该合作单已生成奖励记录");
+        }
+        insertCooperationRewardRecord(snapshot, cooperationId, approvedPostId);
+        jdbcTemplate.update(
+            """
+            update creator_cooperation
+            set cooperation_status = 3,
+                reward_issued_at = now(),
+                updated_at = now()
+            where id = ?
+            """,
+            cooperationId
+        );
+        jdbcTemplate.update(
+            """
+            insert into message_notification (user_id, message_type, title, content, read_status, created_at)
+            values (?, ?, ?, ?, 0, now())
+            """,
+            snapshot.userId(),
+            "激励通知",
+            "合作奖励已发放",
+            "合作单《" + snapshot.title() + "》的奖励 " + formatCurrency(snapshot.rewardAmount()) + " 已发放，结算确认后会自动进入激励中心可提现余额。"
+        );
+    }
+
+    @Override
     public void settleCommission(Long recordId) {
         requireAffected(
             jdbcTemplate.update("update commission_record set settlement_status = 1 where id = ?", recordId),
             "结算记录不存在"
         );
+        syncCooperationSettlementTime(recordId);
     }
 
     @Override
@@ -588,6 +964,145 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         if (affectedRows <= 0) {
             throw new BusinessException(message);
         }
+    }
+
+    private Long findLatestApprovedCooperationPostId(Long cooperationId) {
+        return jdbcTemplate.query(
+            """
+            select p.id
+            from post p
+            where p.cooperation_id = ?
+              and p.status = 1
+              and p.audit_status = 1
+            order by p.updated_at desc, p.id desc
+            limit 1
+            """,
+            rs -> rs.next() ? rs.getLong("id") : null,
+            cooperationId
+        );
+    }
+
+    private void syncAllCooperationProgress() {
+        List<Long> cooperationIds = jdbcTemplate.queryForList(
+            "select id from creator_cooperation order by id asc",
+            Long.class
+        );
+        for (Long cooperationId : cooperationIds) {
+            cooperationService.syncProgressByCooperationId(cooperationId);
+        }
+    }
+
+    private Integer countExistingCooperationRewardRecords(Long cooperationId, Long approvedPostId) {
+        if (columnExists("commission_record", "cooperation_id")) {
+            return jdbcTemplate.queryForObject(
+                "select count(*) from commission_record where cooperation_id = ?",
+                Integer.class,
+                cooperationId
+            );
+        }
+        if (columnExists("post", "cooperation_id")) {
+            return jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from commission_record cr
+                join post p on p.id = cr.post_id
+                where p.cooperation_id = ?
+                """,
+                Integer.class,
+                cooperationId
+            );
+        }
+        return jdbcTemplate.queryForObject(
+            "select count(*) from commission_record where post_id = ? and income_type = ?",
+            Integer.class,
+            approvedPostId,
+            "合作分成"
+        );
+    }
+
+    private void insertCooperationRewardRecord(CooperationRewardSnapshot snapshot, Long cooperationId, Long approvedPostId) {
+        boolean hasCooperationIdColumn = columnExists("commission_record", "cooperation_id");
+        boolean hasRemarkColumn = columnExists("commission_record", "remark");
+        String remark = "合作奖励：《" + snapshot.title() + "》";
+
+        if (hasCooperationIdColumn && hasRemarkColumn) {
+            jdbcTemplate.update(
+                """
+                insert into commission_record (
+                    post_id, user_id, cooperation_id, income_type, commission_amount, settlement_status, remark, created_at
+                ) values (?, ?, ?, ?, ?, 0, ?, now())
+                """,
+                approvedPostId,
+                snapshot.userId(),
+                cooperationId,
+                "合作分成",
+                snapshot.rewardAmount(),
+                remark
+            );
+            return;
+        }
+
+        if (hasCooperationIdColumn) {
+            jdbcTemplate.update(
+                """
+                insert into commission_record (
+                    post_id, user_id, cooperation_id, income_type, commission_amount, settlement_status, created_at
+                ) values (?, ?, ?, ?, ?, 0, now())
+                """,
+                approvedPostId,
+                snapshot.userId(),
+                cooperationId,
+                "合作分成",
+                snapshot.rewardAmount()
+            );
+            return;
+        }
+
+        if (hasRemarkColumn) {
+            jdbcTemplate.update(
+                """
+                insert into commission_record (
+                    post_id, user_id, income_type, commission_amount, settlement_status, remark, created_at
+                ) values (?, ?, ?, ?, 0, ?, now())
+                """,
+                approvedPostId,
+                snapshot.userId(),
+                "合作分成",
+                snapshot.rewardAmount(),
+                remark
+            );
+            return;
+        }
+
+        jdbcTemplate.update(
+            """
+            insert into commission_record (
+                post_id, user_id, income_type, commission_amount, settlement_status, created_at
+            ) values (?, ?, ?, ?, 0, now())
+            """,
+            approvedPostId,
+            snapshot.userId(),
+            "合作分成",
+            snapshot.rewardAmount()
+        );
+    }
+
+    private void syncCooperationSettlementTime(Long recordId) {
+        if (!columnExists("commission_record", "cooperation_id") || !columnExists("creator_cooperation", "settled_at")) {
+            return;
+        }
+        Long cooperationId = jdbcTemplate.query(
+            "select cooperation_id from commission_record where id = ? limit 1",
+            rs -> rs.next() ? (Long) rs.getObject("cooperation_id") : null,
+            recordId
+        );
+        if (cooperationId == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            "update creator_cooperation set settled_at = now(), updated_at = now() where id = ?",
+            cooperationId
+        );
     }
 
     private PostAuditSnapshot requirePostAuditSnapshot(Long postId) {
@@ -793,6 +1308,248 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         );
     }
 
+    private CooperationPayload normalizeCooperationPayload(AdminCooperationSaveRequest request) {
+        if (request == null) {
+            throw new BusinessException("合作内容不能为空");
+        }
+        if (request.userId() == null) {
+            throw new BusinessException("创作者不能为空");
+        }
+        if (request.merchantId() == null) {
+            throw new BusinessException("商家不能为空");
+        }
+        Integer userCount = jdbcTemplate.queryForObject(
+            "select count(*) from app_user where id = ?",
+            Integer.class,
+            request.userId()
+        );
+        if (userCount == null || userCount <= 0) {
+            throw new BusinessException("未找到对应创作者");
+        }
+        MerchantStatusSnapshot merchantSnapshot = requireMerchantStatusSnapshot(request.merchantId());
+        if (merchantSnapshot.statusCode() != 1) {
+            throw new BusinessException("该商家仍为意向状态，请先设为合作中后再创建合作单");
+        }
+        String title = normalizeRequiredText(request.cooperationTitle(), "合作标题不能为空");
+        String desc = coalesce(normalizeOptionalText(request.cooperationDesc()), "");
+        BigDecimal rewardAmount = request.rewardAmount() == null
+            ? null
+            : request.rewardAmount().setScale(2, RoundingMode.HALF_UP);
+        if (rewardAmount == null || rewardAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("奖励金额必须大于 0");
+        }
+        int targetPostCount = request.targetPostCount() == null ? 1 : request.targetPostCount();
+        if (targetPostCount <= 0) {
+            throw new BusinessException("目标内容数必须大于 0");
+        }
+        int targetLikeCount = request.targetLikeCount() == null ? 0 : request.targetLikeCount();
+        if (targetLikeCount < 0) {
+            throw new BusinessException("目标点赞数不能小于 0");
+        }
+        LocalDateTime deadlineAt = parseDateTime(request.deadlineAt(), null, "合作截止时间格式不正确");
+        if (deadlineAt != null && deadlineAt.isBefore(LocalDateTime.now())) {
+            throw new BusinessException("合作截止时间不能早于当前时间");
+        }
+        return new CooperationPayload(
+            request.userId(),
+            request.merchantId(),
+            title,
+            desc,
+            rewardAmount,
+            targetPostCount,
+            targetLikeCount,
+            deadlineAt
+        );
+    }
+
+    private MerchantPayload normalizeMerchantPayload(AdminMerchantSaveRequest request) {
+        if (request == null) {
+            throw new BusinessException("商家内容不能为空");
+        }
+        String merchantName = normalizeRequiredText(request.merchantName(), "商家名称不能为空");
+        String contactName = coalesce(normalizeOptionalText(request.contactName()), "");
+        String contactPhone = coalesce(normalizeOptionalText(request.contactPhone()), "");
+        String remark = coalesce(normalizeOptionalText(request.remark()), "");
+        int cooperationStatus = request.cooperationStatus() == null ? 0 : request.cooperationStatus();
+        if (cooperationStatus != 0 && cooperationStatus != 1) {
+            throw new BusinessException("商家状态不正确");
+        }
+        return new MerchantPayload(
+            merchantName,
+            contactName,
+            contactPhone,
+            cooperationStatus,
+            remark
+        );
+    }
+
+    private CooperationRewardSnapshot requireRewardableCooperation(Long cooperationId) {
+        CooperationRewardSnapshot snapshot = jdbcTemplate.query(
+            """
+            select id, user_id, cooperation_title, reward_amount, cooperation_status, reward_issued_at
+            from creator_cooperation
+            where id = ?
+            limit 1
+            """,
+            rs -> rs.next()
+                ? new CooperationRewardSnapshot(
+                    rs.getLong("id"),
+                    rs.getLong("user_id"),
+                    rs.getString("cooperation_title"),
+                    scaleAmount(rs.getBigDecimal("reward_amount")),
+                    rs.getInt("cooperation_status"),
+                    rs.getTimestamp("reward_issued_at")
+                )
+                : null,
+            cooperationId
+        );
+        if (snapshot == null) {
+            throw new BusinessException("合作单不存在");
+        }
+        if (snapshot.rewardIssuedAt() != null || snapshot.statusCode() == 3) {
+            throw new BusinessException("该合作单奖励已发放");
+        }
+        if (snapshot.statusCode() != 2) {
+            throw new BusinessException("该合作单尚未达到发奖条件");
+        }
+        if (snapshot.rewardAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("该合作单奖励金额无效");
+        }
+        return snapshot;
+    }
+
+    private CooperationManageSnapshot requireCancelableCooperation(Long cooperationId) {
+        CooperationManageSnapshot snapshot = jdbcTemplate.query(
+            """
+            select id, user_id, cooperation_title, cooperation_status, accepted_at, reward_issued_at
+            from creator_cooperation
+            where id = ?
+            limit 1
+            """,
+            rs -> rs.next()
+                ? new CooperationManageSnapshot(
+                    rs.getLong("id"),
+                    rs.getLong("user_id"),
+                    rs.getString("cooperation_title"),
+                    rs.getInt("cooperation_status"),
+                    rs.getTimestamp("accepted_at"),
+                    rs.getTimestamp("reward_issued_at")
+                )
+                : null,
+            cooperationId
+        );
+        if (snapshot == null) {
+            throw new BusinessException("合作单不存在");
+        }
+        if (snapshot.rewardIssuedAt() != null || snapshot.statusCode() == 3) {
+            throw new BusinessException("该合作单奖励已发放，不能取消");
+        }
+        if (snapshot.statusCode() == 4) {
+            throw new BusinessException("该合作单已取消");
+        }
+        return snapshot;
+    }
+
+    private MerchantDeleteSnapshot requireDeletableMerchant(Long merchantId) {
+        MerchantDeleteSnapshot snapshot = jdbcTemplate.query(
+            """
+            select
+                m.id,
+                m.merchant_name,
+                0 as campaign_count,
+                0 as slot_count,
+                coalesce((select count(*) from creator_cooperation cc where cc.merchant_id = m.id and cc.cooperation_status in (0, 1, 2)), 0) as active_cooperation_count
+            from merchant m
+            where m.id = ?
+              and m.deleted_at is null
+            limit 1
+            """,
+            rs -> rs.next()
+                ? new MerchantDeleteSnapshot(
+                    rs.getLong("id"),
+                    rs.getString("merchant_name"),
+                    rs.getInt("campaign_count"),
+                    rs.getInt("slot_count"),
+                    rs.getInt("active_cooperation_count")
+                )
+                : null,
+            merchantId
+        );
+        if (snapshot == null) {
+            throw new BusinessException("商家不存在");
+        }
+        return snapshot;
+    }
+
+    private MerchantStatusSnapshot requireMerchantStatusSnapshot(Long merchantId) {
+        MerchantStatusSnapshot snapshot = jdbcTemplate.query(
+            """
+            select id, merchant_name, cooperation_status
+            from merchant
+            where id = ?
+              and deleted_at is null
+            limit 1
+            """,
+            rs -> rs.next()
+                ? new MerchantStatusSnapshot(
+                    rs.getLong("id"),
+                    rs.getString("merchant_name"),
+                    rs.getInt("cooperation_status")
+                )
+                : null,
+            merchantId
+        );
+        if (snapshot == null) {
+            throw new BusinessException("商家不存在");
+        }
+        return snapshot;
+    }
+
+    private String mapCooperationStatus(int statusCode) {
+        return switch (statusCode) {
+            case 1 -> "进行中";
+            case 2 -> "待发奖励";
+            case 3 -> "已发奖励";
+            case 4 -> "已放弃";
+            default -> "待确认";
+        };
+    }
+
+    private String generateCooperationCode() {
+        long nextSerial = resolveNextCooperationSerial();
+        String candidate = formatCooperationRouteCode(nextSerial);
+        while (cooperationCodeExists(candidate)) {
+            nextSerial += 1;
+            candidate = formatCooperationRouteCode(nextSerial);
+        }
+        return candidate;
+    }
+
+    private boolean cooperationCodeExists(String cooperationCode) {
+        Integer count = jdbcTemplate.queryForObject(
+            "select count(*) from creator_cooperation where cooperation_code = ?",
+            Integer.class,
+            cooperationCode
+        );
+        return count != null && count > 0;
+    }
+
+    private long resolveNextCooperationSerial() {
+        Long nextSerial = jdbcTemplate.queryForObject(
+            "select coalesce(max(id), 0) + 1 from creator_cooperation",
+            Long.class
+        );
+        return nextSerial == null || nextSerial <= 0 ? 1L : nextSerial;
+    }
+
+    private String formatCooperationRouteCode(long serial) {
+        return String.format(Locale.ROOT, "coop-%06d", Math.max(serial, 1L));
+    }
+
+    private String formatCooperationDisplayCode(long cooperationId) {
+        return String.format(Locale.ROOT, "COOP-%06d", Math.max(cooperationId, 1L));
+    }
+
     private String generateActivityCode(String title) {
         String baseCode = title == null
             ? "activity"
@@ -818,6 +1575,36 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             activityCode
         );
         return count != null && count > 0;
+    }
+
+    private boolean tableExists(String tableName) {
+        Integer tableCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.tables
+            where table_schema = database()
+              and table_name = ?
+            """,
+            Integer.class,
+            tableName
+        );
+        return tableCount != null && tableCount > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer columnCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = database()
+              and table_name = ?
+              and column_name = ?
+            """,
+            Integer.class,
+            tableName,
+            columnName
+        );
+        return columnCount != null && columnCount > 0;
     }
 
     private String joinSchool(String schoolName, String gradeName) {
@@ -874,6 +1661,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     private String formatCurrency(BigDecimal amount) {
+        return "￥" + scaleAmount(amount).toPlainString();
+    }
+
+    private String formatPrice(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return "未填写";
+        }
         return "￥" + scaleAmount(amount).toPlainString();
     }
 
@@ -961,6 +1755,14 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    private List<String> findPostImageUrls(long postId) {
+        return jdbcTemplate.queryForList(
+            "select image_url from post_image where post_id = ? order by sort_order asc, id asc",
+            String.class,
+            postId
+        );
+    }
+
     private record AnnouncementNoticeSnapshot(
         Long announcementId,
         String title,
@@ -1000,6 +1802,63 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         int sortOrder,
         LocalDateTime publishTime,
         LocalDateTime expireTime
+    ) {
+    }
+
+    private record CooperationPayload(
+        Long userId,
+        Long merchantId,
+        String title,
+        String desc,
+        BigDecimal rewardAmount,
+        int targetPostCount,
+        int targetLikeCount,
+        LocalDateTime deadlineAt
+    ) {
+    }
+
+    private record MerchantPayload(
+        String name,
+        String contact,
+        String phone,
+        int status,
+        String remark
+    ) {
+    }
+
+    private record CooperationRewardSnapshot(
+        Long cooperationId,
+        Long userId,
+        String title,
+        BigDecimal rewardAmount,
+        int statusCode,
+        Timestamp rewardIssuedAt
+    ) {
+    }
+
+    private record CooperationManageSnapshot(
+        Long cooperationId,
+        Long userId,
+        String title,
+        int statusCode,
+        Timestamp acceptedAt,
+        Timestamp rewardIssuedAt
+    ) {
+    }
+
+    private record MerchantDeleteSnapshot(
+        Long merchantId,
+        String merchantName,
+        int campaignCount,
+        int slotCount,
+        int activeCooperationCount
+    ) {
+    }
+
+    private record MerchantStatusSnapshot(
+        Long merchantId,
+        String merchantName,
+        int statusCode
     ) {
     }
 

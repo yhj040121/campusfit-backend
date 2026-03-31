@@ -29,12 +29,158 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         ensureAppUserPasswordHashColumn();
+        ensureMerchantColumns();
+        ensureCooperationColumns();
         ensurePostDraftColumns();
         ensurePostCommentColumns();
         ensurePostCommentLikeTable();
         ensureActivityTopicColumns();
         syncDefaultActivities();
         syncDefaultAnnouncement();
+    }
+
+    private void ensureCooperationColumns() {
+        if (!tableExists("creator_cooperation")) {
+            return;
+        }
+
+        if (tableExists("post")) {
+            ensurePostColumn(
+                "cooperation_id",
+                "alter table post add column cooperation_id bigint null after user_id"
+            );
+            ensurePostIndex(
+                "idx_post_cooperation",
+                "alter table post add key idx_post_cooperation (cooperation_id)"
+            );
+        }
+
+        ensureCreatorCooperationColumn(
+            "cooperation_code",
+            "alter table creator_cooperation add column cooperation_code varchar(50) null after id"
+        );
+        jdbcTemplate.update(
+            """
+            update creator_cooperation
+            set cooperation_code = concat('coop-', lpad(id, 6, '0'))
+            where cooperation_code is null or trim(cooperation_code) = ''
+            """
+        );
+        ensureCreatorCooperationUniqueKey(
+            "uk_creator_cooperation_code",
+            "alter table creator_cooperation add unique key uk_creator_cooperation_code (cooperation_code)"
+        );
+        ensureCreatorCooperationColumn(
+            "cooperation_desc",
+            "alter table creator_cooperation add column cooperation_desc varchar(500) null after cooperation_title"
+        );
+        ensureCreatorCooperationColumn(
+            "cooperation_mode",
+            "alter table creator_cooperation add column cooperation_mode varchar(30) not null default 'PLATFORM_INVITE' after cooperation_desc"
+        );
+        ensureCreatorCooperationColumn(
+            "target_post_count",
+            "alter table creator_cooperation add column target_post_count int not null default 1 after reward_amount"
+        );
+        ensureCreatorCooperationColumn(
+            "target_like_count",
+            "alter table creator_cooperation add column target_like_count int not null default 0 after target_post_count"
+        );
+        ensureCreatorCooperationColumn(
+            "deadline_at",
+            "alter table creator_cooperation add column deadline_at datetime null after target_like_count"
+        );
+        ensureCreatorCooperationColumn(
+            "accepted_at",
+            "alter table creator_cooperation add column accepted_at datetime null after deadline_at"
+        );
+        ensureCreatorCooperationColumn(
+            "reward_issued_at",
+            "alter table creator_cooperation add column reward_issued_at datetime null after accepted_at"
+        );
+        ensureCreatorCooperationColumn(
+            "settled_at",
+            "alter table creator_cooperation add column settled_at datetime null after reward_issued_at"
+        );
+        ensureCreatorCooperationColumn(
+            "abandoned_at",
+            "alter table creator_cooperation add column abandoned_at datetime null after settled_at"
+        );
+        ensureCreatorCooperationColumn(
+            "created_at",
+            "alter table creator_cooperation add column created_at datetime not null default current_timestamp after abandoned_at"
+        );
+        ensureCreatorCooperationColumn(
+            "updated_at",
+            "alter table creator_cooperation add column updated_at datetime not null default current_timestamp on update current_timestamp after created_at"
+        );
+        jdbcTemplate.update(
+            """
+            update creator_cooperation
+            set accepted_at = coalesce(accepted_at, created_at)
+            where cooperation_status in (1, 2, 3)
+            """
+        );
+        jdbcTemplate.update(
+            """
+            update creator_cooperation
+            set reward_issued_at = coalesce(reward_issued_at, created_at),
+                settled_at = coalesce(settled_at, reward_issued_at, created_at)
+            where cooperation_status = 3
+            """
+        );
+
+        ensurePostDraftColumn(
+            "cooperation_code",
+            "alter table post_draft add column cooperation_code varchar(50) null after activity_code"
+        );
+        if (tableExists("post_draft") && columnExists("post_draft", "cooperation_id")) {
+            jdbcTemplate.update(
+                """
+                update post_draft d
+                join creator_cooperation c on c.id = d.cooperation_id
+                set d.cooperation_code = c.cooperation_code
+                where (d.cooperation_code is null or trim(d.cooperation_code) = '')
+                """
+            );
+        }
+
+        if (tableExists("commission_record")) {
+            ensureCommissionRecordColumn(
+                "cooperation_id",
+                "alter table commission_record add column cooperation_id bigint null after user_id"
+            );
+            ensureCommissionRecordColumn(
+                "remark",
+                "alter table commission_record add column remark varchar(255) null after settlement_status"
+            );
+            ensureCommissionRecordIndex(
+                "idx_commission_record_cooperation",
+                "alter table commission_record add key idx_commission_record_cooperation (cooperation_id)"
+            );
+            if (columnExists("post", "cooperation_id")) {
+                jdbcTemplate.update(
+                    """
+                    update commission_record cr
+                    join post p on p.id = cr.post_id
+                    set cr.cooperation_id = p.cooperation_id
+                    where cr.cooperation_id is null
+                      and p.cooperation_id is not null
+                    """
+                );
+            }
+        }
+    }
+
+    private void ensureMerchantColumns() {
+        if (!tableExists("merchant")) {
+            return;
+        }
+
+        ensureMerchantColumn(
+            "deleted_at",
+            "alter table merchant add column deleted_at datetime null after created_at"
+        );
     }
 
     private void ensureAppUserPasswordHashColumn() {
@@ -69,6 +215,9 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
     }
 
     private void ensurePostDraftColumn(String columnName, String alterSql) {
+        if (!tableExists("post_draft")) {
+            return;
+        }
         Integer columnCount = jdbcTemplate.queryForObject(
             """
             select count(*)
@@ -86,6 +235,62 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
 
         jdbcTemplate.execute(alterSql);
         log.info("Added missing post_draft.{} column automatically.", columnName);
+    }
+
+    private void ensurePostColumn(String columnName, String alterSql) {
+        if (columnExists("post", columnName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing post.{} column automatically.", columnName);
+    }
+
+    private void ensurePostIndex(String keyName, String alterSql) {
+        if (indexExists("post", keyName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing post.{} index automatically.", keyName);
+    }
+
+    private void ensureCreatorCooperationColumn(String columnName, String alterSql) {
+        if (columnExists("creator_cooperation", columnName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing creator_cooperation.{} column automatically.", columnName);
+    }
+
+    private void ensureMerchantColumn(String columnName, String alterSql) {
+        if (columnExists("merchant", columnName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing merchant.{} column automatically.", columnName);
+    }
+
+    private void ensureCreatorCooperationUniqueKey(String keyName, String alterSql) {
+        if (indexExists("creator_cooperation", keyName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing creator_cooperation.{} index automatically.", keyName);
+    }
+
+    private void ensureCommissionRecordColumn(String columnName, String alterSql) {
+        if (columnExists("commission_record", columnName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing commission_record.{} column automatically.", columnName);
+    }
+
+    private void ensureCommissionRecordIndex(String keyName, String alterSql) {
+        if (indexExists("commission_record", keyName)) {
+            return;
+        }
+        jdbcTemplate.execute(alterSql);
+        log.info("Added missing commission_record.{} index automatically.", keyName);
     }
 
     private void ensurePostCommentColumns() {
@@ -387,5 +592,37 @@ public class DatabaseSchemaRepairRunner implements ApplicationRunner {
             tableName
         );
         return tableCount != null && tableCount > 0;
+    }
+
+    private boolean columnExists(String tableName, String columnName) {
+        Integer columnCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.columns
+            where table_schema = database()
+              and table_name = ?
+              and column_name = ?
+            """,
+            Integer.class,
+            tableName,
+            columnName
+        );
+        return columnCount != null && columnCount > 0;
+    }
+
+    private boolean indexExists(String tableName, String indexName) {
+        Integer indexCount = jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from information_schema.statistics
+            where table_schema = database()
+              and table_name = ?
+              and index_name = ?
+            """,
+            Integer.class,
+            tableName,
+            indexName
+        );
+        return indexCount != null && indexCount > 0;
     }
 }
