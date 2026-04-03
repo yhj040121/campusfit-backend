@@ -25,7 +25,7 @@ spring:
       max-request-size: ${APP_MAX_UPLOAD_REQUEST_SIZE:12MB}
 
 app:
-  name: CampusFit Backend
+  name: 青搭 Backend
   jwt:
     user-secret: ${USER_JWT_SECRET:CampusFitUserSecretChangeMe1234567890}
     user-expire-hours: ${USER_JWT_EXPIRE_HOURS:72}

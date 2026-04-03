@@ -15,7 +15,7 @@
     <artifactId>campusfit-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>campusfit-backend</name>
-    <description>CampusFit backend service based on Spring Boot and MySQL</description>
+    <description>青搭 backend service based on Spring Boot and MySQL</description>
 
     <properties>
         <java.version>21</java.version>

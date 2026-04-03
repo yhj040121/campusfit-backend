@@ -1,6 +1,6 @@
-# CampusFit Backend
+# 青搭 Backend
 
-Spring Boot backend for the CampusFit project.
+Spring Boot backend for the 青搭 project.
 
 ## Stack
 - JDK 21
