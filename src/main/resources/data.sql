@@ -6,11 +6,11 @@ INSERT INTO app_user (id, phone, nickname, avatar_url, password_hash, status) VA
     (3, '18688882028', '鹿宁', NULL, NULL, 1),
     (4, '18688882029', '安可', NULL, NULL, 1);
 
-INSERT INTO user_profile (id, user_id, school_name, grade_name, signature, avatar_text, avatar_class, gender, email, location_name, like_count, follower_count, following_count) VALUES
-    (1, 1, '华东师范大学', '大三', '分享真实校园穿搭和理性购物推荐。', 'Q', 'soft', 'female', 'qiaoqiao@campusfit.cn', '上海 徐汇', 3580, 1240, 198),
-    (2, 2, '上海大学', '大二', '专门收藏适合运动和社团场景的校园穿搭灵感。', 'L', 'soft', 'female', 'linxia@campusfit.cn', '上海 宝山', 2290, 980, 156),
-    (3, 3, '同济大学', '研一', '偏爱温柔日常和高性价比叠穿单品。', 'L', 'alt', 'male', 'luning@campusfit.cn', '上海 杨浦', 3110, 760, 132),
-    (4, 4, '复旦大学', '大一', '更关注教室通勤和学生预算内的实用穿搭。', 'A', 'soft', 'secret', 'anke@campusfit.cn', '上海 杨浦', 1870, 540, 88);
+INSERT INTO user_profile (id, user_id, school_name, grade_name, signature, avatar_text, avatar_class, gender, email, location_name) VALUES
+    (1, 1, '华东师范大学', '大三', '分享真实校园穿搭和理性购物推荐。', 'Q', 'soft', 'female', 'qiaoqiao@campusfit.cn', '上海 徐汇'),
+    (2, 2, '上海大学', '大二', '专门收藏适合运动和社团场景的校园穿搭灵感。', 'L', 'soft', 'female', 'linxia@campusfit.cn', '上海 宝山'),
+    (3, 3, '同济大学', '研一', '偏爱温柔日常和高性价比叠穿单品。', 'L', 'alt', 'male', 'luning@campusfit.cn', '上海 杨浦'),
+    (4, 4, '复旦大学', '大一', '更关注教室通勤和学生预算内的实用穿搭。', 'A', 'soft', 'secret', 'anke@campusfit.cn', '上海 杨浦');
 
 INSERT INTO tag_option (id, category, option_value, sort_order, status) VALUES
     (1, 'scene', '早八', 1, 1),
@@ -63,13 +63,13 @@ INSERT INTO post_tag (id, post_id, tag_type, tag_value) VALUES
     (17, 6, 'highlight', '久坐友好'),
     (18, 6, 'highlight', '柔和中性');
 
-INSERT INTO product_link (id, post_id, product_name, platform_name, product_url, link_status, is_partner_product, commission_rate, price_amount, profit_label, guide_tip, last_checked_at) VALUES
-    (1, 1, '衬衫 + 针织马甲 + 百褶裙', '淘宝校园精选', 'https://s.taobao.com/search?q=%E8%A1%AC%E8%A1%AB%20%E9%92%88%E7%BB%87%E9%A9%AC%E7%94%B2%20%E7%99%BE%E8%A4%B6%E8%A3%99', 1, 1, 8.00, 139.00, '平台导购佣金 8%', '请结合真实需求比价后再下单。', NOW()),
-    (2, 2, '卫衣 + 工装裤 + 运动鞋', '京东校园店', 'https://search.jd.com/Search?keyword=%E5%8D%AB%E8%A1%A3%20%E5%B7%A5%E8%A3%85%E8%A3%A4%20%E8%BF%90%E5%8A%A8%E9%9E%8B', 1, 1, 6.00, 179.00, '平台导购佣金 6%', '运动场景优先考虑舒适度和耐穿性。', NOW()),
-    (3, 3, '开衫 + 连衣裙 + 白色运动鞋', '天猫校园店', 'https://list.tmall.com/search_product.htm?q=%E5%BC%80%E8%A1%AB%20%E8%BF%9E%E8%A1%A3%E8%A3%99%20%E7%99%BD%E8%89%B2%E8%BF%90%E5%8A%A8%E9%9E%8B', 1, 0, 6.50, 199.00, '品牌合作分成', '如果通勤需求更强，可以再加一件轻薄外套。', NOW()),
-    (4, 4, '白T + 牛仔裙 + 帆布鞋', '拼多多学生优选', 'https://mobile.yangkeduo.com/search_result.html?search_key=%E7%99%BDT%20%E7%89%9B%E4%BB%94%E8%A3%99%20%E5%B8%86%E5%B8%83%E9%9E%8B', 1, 1, 5.00, 89.00, '平台导购佣金 5%', '预算有限时先买高复用基础款。', NOW()),
-    (5, 5, '衬衫 + 针织背心 + 短裙', '淘宝校园精选', 'https://s.taobao.com/search?q=%E8%A1%AC%E8%A1%AB%20%E9%92%88%E7%BB%87%E8%83%8C%E5%BF%83%20%E7%9F%AD%E8%A3%99', 1, 0, 7.00, 189.00, '品牌合作分成', '如果场景更正式，可以把短裙替换成中长裙。', NOW()),
-    (6, 6, '开衫 + 阔腿裤 + 休闲鞋', '京东校园店', 'https://search.jd.com/Search?keyword=%E5%BC%80%E8%A1%AB%20%E9%98%94%E8%85%BF%E8%A3%A4%20%E4%BC%91%E9%97%B2%E9%9E%8B', 1, 1, 6.00, 149.00, '平台导购佣金 6%', '复习周穿搭建议以舒适和耐久为先。', NOW());
+INSERT INTO product_link (id, post_id, product_name, platform_name, product_url, link_status, price_amount, profit_label, guide_tip) VALUES
+    (1, 1, '衬衫 + 针织马甲 + 百褶裙', '淘宝校园精选', 'https://s.taobao.com/search?q=%E8%A1%AC%E8%A1%AB%20%E9%92%88%E7%BB%87%E9%A9%AC%E7%94%B2%20%E7%99%BE%E8%A4%B6%E8%A3%99', 1, 139.00, '平台导购佣金 8%', '请结合真实需求比价后再下单。'),
+    (2, 2, '卫衣 + 工装裤 + 运动鞋', '京东校园店', 'https://search.jd.com/Search?keyword=%E5%8D%AB%E8%A1%A3%20%E5%B7%A5%E8%A3%85%E8%A3%A4%20%E8%BF%90%E5%8A%A8%E9%9E%8B', 1, 179.00, '平台导购佣金 6%', '运动场景优先考虑舒适度和耐穿性。'),
+    (3, 3, '开衫 + 连衣裙 + 白色运动鞋', '天猫校园店', 'https://list.tmall.com/search_product.htm?q=%E5%BC%80%E8%A1%AB%20%E8%BF%9E%E8%A1%A3%E8%A3%99%20%E7%99%BD%E8%89%B2%E8%BF%90%E5%8A%A8%E9%9E%8B', 1, 199.00, '品牌合作分成', '如果通勤需求更强，可以再加一件轻薄外套。'),
+    (4, 4, '白T + 牛仔裙 + 帆布鞋', '拼多多学生优选', 'https://mobile.yangkeduo.com/search_result.html?search_key=%E7%99%BDT%20%E7%89%9B%E4%BB%94%E8%A3%99%20%E5%B8%86%E5%B8%83%E9%9E%8B', 1, 89.00, '平台导购佣金 5%', '预算有限时先买高复用基础款。'),
+    (5, 5, '衬衫 + 针织背心 + 短裙', '淘宝校园精选', 'https://s.taobao.com/search?q=%E8%A1%AC%E8%A1%AB%20%E9%92%88%E7%BB%87%E8%83%8C%E5%BF%83%20%E7%9F%AD%E8%A3%99', 1, 189.00, '品牌合作分成', '如果场景更正式，可以把短裙替换成中长裙。'),
+    (6, 6, '开衫 + 阔腿裤 + 休闲鞋', '京东校园店', 'https://search.jd.com/Search?keyword=%E5%BC%80%E8%A1%AB%20%E9%98%94%E8%85%BF%E8%A3%A4%20%E4%BC%91%E9%97%B2%E9%9E%8B', 1, 149.00, '平台导购佣金 6%', '复习周穿搭建议以舒适和耐久为先。');
 
 INSERT INTO post_comment (id, post_id, user_id, content, like_count, status, created_at) VALUES
     (1, 1, 2, '这个配色真的很适合图书馆场景。', 16, 1, DATE_SUB(NOW(), INTERVAL 42 MINUTE)),
@@ -131,9 +131,6 @@ INSERT INTO post_favorite (id, post_id, user_id, created_at) VALUES
     (1, 1, 2, DATE_SUB(NOW(), INTERVAL 10 HOUR)),
     (2, 1, 3, DATE_SUB(NOW(), INTERVAL 9 HOUR)),
     (3, 3, 1, DATE_SUB(NOW(), INTERVAL 7 HOUR));
-
-INSERT INTO report_record (id, reporter_user_id, target_type, target_id, reason, process_status, created_at) VALUES
-    (1, 2, 'post', 4, '演示用内容治理样例', 1, DATE_SUB(NOW(), INTERVAL 2 DAY));
 
 INSERT IGNORE INTO user_activity_join (activity_id, user_id, created_at)
 SELECT 1, ua.user_id, ua.created_at
@@ -311,6 +308,5 @@ ALTER TABLE message_notification AUTO_INCREMENT = 6;
 ALTER TABLE user_follow AUTO_INCREMENT = 4;
 ALTER TABLE post_like AUTO_INCREMENT = 4;
 ALTER TABLE post_favorite AUTO_INCREMENT = 4;
-ALTER TABLE report_record AUTO_INCREMENT = 2;
 ALTER TABLE official_announcement AUTO_INCREMENT = 5;
 ALTER TABLE sys_admin_user AUTO_INCREMENT = 4;

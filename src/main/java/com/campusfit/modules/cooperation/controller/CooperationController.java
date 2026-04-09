@@ -26,11 +26,6 @@ public class CooperationController {
         return ApiResponse.success(cooperationService.listMine());
     }
 
-    @GetMapping("/{cooperationCode}")
-    public ApiResponse<CooperationItemVO> detail(@PathVariable String cooperationCode) {
-        return ApiResponse.success(cooperationService.findByCode(cooperationCode));
-    }
-
     @PostMapping("/{cooperationCode}/accept")
     public ApiResponse<CooperationItemVO> accept(@PathVariable String cooperationCode) {
         return ApiResponse.success("Cooperation accepted", cooperationService.accept(cooperationCode));

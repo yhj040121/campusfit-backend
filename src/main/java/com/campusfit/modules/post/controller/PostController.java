@@ -100,18 +100,6 @@ public class PostController {
         return ApiResponse.success("删除成功", true);
     }
 
-    @PostMapping("/{postId}/shelf-down")
-    public ApiResponse<Boolean> shelfDown(@PathVariable String postId) {
-        postService.shelfDownMine(postId);
-        return ApiResponse.success("下架成功", true);
-    }
-
-    @PostMapping("/{postId}/restore")
-    public ApiResponse<Boolean> restore(@PathVariable String postId) {
-        postService.restoreMine(postId);
-        return ApiResponse.success("重新上架成功", true);
-    }
-
     @GetMapping("/{postId}/comments")
     public ApiResponse<List<PostCommentVO>> comments(@PathVariable String postId) {
         return ApiResponse.success(postService.listComments(postId));
@@ -148,5 +136,4 @@ public class PostController {
         return ApiResponse.success(postService.toggleFavorite(postId));
     }
 }
-
 

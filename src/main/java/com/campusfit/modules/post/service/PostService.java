@@ -38,10 +38,6 @@ public interface PostService {
 
     void deleteMine(String postId);
 
-    void shelfDownMine(String postId);
-
-    void restoreMine(String postId);
-
     List<PostCommentVO> listComments(String postId);
 
     PostCommentVO createComment(String postId, PostCommentCreateRequest request);
@@ -56,5 +52,4 @@ public interface PostService {
 
     PostInteractionVO toggleFavorite(String postId);
 }
-
 

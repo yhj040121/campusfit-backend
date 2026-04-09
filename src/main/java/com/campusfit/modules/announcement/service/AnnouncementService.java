@@ -9,6 +9,4 @@ public interface AnnouncementService {
     List<AnnouncementVO> listPublishedHistory();
 
     AnnouncementVO getLatestPublished();
-
-    AnnouncementVO getPublishedDetail(Long announcementId);
 }

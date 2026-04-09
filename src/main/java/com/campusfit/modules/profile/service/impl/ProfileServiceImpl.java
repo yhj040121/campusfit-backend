@@ -159,7 +159,7 @@ public class ProfileServiceImpl implements ProfileService {
             );
         } else {
             jdbcTemplate.update(
-                "insert into user_profile (user_id, school_name, grade_name, signature, avatar_text, avatar_class, cover_image_url, gender, email, location_name, like_count, follower_count, following_count, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())",
+                "insert into user_profile (user_id, school_name, grade_name, signature, avatar_text, avatar_class, cover_image_url, gender, email, location_name, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())",
                 currentUserId,
                 schoolName,
                 gradeName,

@@ -1,7 +1,6 @@
 SET NAMES utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS report_record;
 DROP TABLE IF EXISTS message_notification;
 DROP TABLE IF EXISTS creator_withdraw_request;
 DROP TABLE IF EXISTS commission_record;
@@ -49,9 +48,6 @@ CREATE TABLE user_profile (
     gender VARCHAR(20),
     email VARCHAR(120),
     location_name VARCHAR(100),
-    like_count INT NOT NULL DEFAULT 0,
-    follower_count INT NOT NULL DEFAULT 0,
-    following_count INT NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_user_profile_user FOREIGN KEY (user_id) REFERENCES app_user(id)
@@ -89,6 +85,8 @@ CREATE TABLE post (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_post_cooperation (cooperation_id),
+    KEY idx_post_status_audit_created (status, audit_status, created_at, id),
+    KEY idx_post_user_status_audit_updated (user_id, status, audit_status, updated_at, id),
     CONSTRAINT fk_post_user FOREIGN KEY (user_id) REFERENCES app_user(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -117,12 +115,9 @@ CREATE TABLE product_link (
     platform_name VARCHAR(50) NOT NULL,
     product_url VARCHAR(500) NOT NULL,
     link_status TINYINT NOT NULL DEFAULT 1,
-    is_partner_product TINYINT NOT NULL DEFAULT 0,
-    commission_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
     price_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     profit_label VARCHAR(120),
     guide_tip VARCHAR(255),
-    last_checked_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_product_link_post FOREIGN KEY (post_id) REFERENCES post(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -229,7 +224,9 @@ CREATE TABLE user_follow (
     follower_user_id BIGINT NOT NULL,
     followee_user_id BIGINT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_follow (follower_user_id, followee_user_id)
+    UNIQUE KEY uk_follow (follower_user_id, followee_user_id),
+    KEY idx_user_follow_followee_created (followee_user_id, created_at, id, follower_user_id),
+    KEY idx_user_follow_follower_created (follower_user_id, created_at, id, followee_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE post_like (
@@ -238,6 +235,7 @@ CREATE TABLE post_like (
     user_id BIGINT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_post_like (post_id, user_id),
+    KEY idx_post_like_user_created (user_id, created_at, id, post_id),
     CONSTRAINT fk_post_like_post FOREIGN KEY (post_id) REFERENCES post(id),
     CONSTRAINT fk_post_like_user FOREIGN KEY (user_id) REFERENCES app_user(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -248,6 +246,7 @@ CREATE TABLE post_favorite (
     user_id BIGINT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_post_favorite (post_id, user_id),
+    KEY idx_post_favorite_user_created (user_id, created_at, id, post_id),
     CONSTRAINT fk_post_favorite_post FOREIGN KEY (post_id) REFERENCES post(id),
     CONSTRAINT fk_post_favorite_user FOREIGN KEY (user_id) REFERENCES app_user(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -262,6 +261,7 @@ CREATE TABLE post_comment (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     parent_comment_id BIGINT,
     reply_user_id BIGINT,
+    KEY idx_post_comment_post_status_parent_created (post_id, status, parent_comment_id, created_at, id),
     CONSTRAINT fk_post_comment_post FOREIGN KEY (post_id) REFERENCES post(id),
     CONSTRAINT fk_post_comment_user FOREIGN KEY (user_id) REFERENCES app_user(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -342,18 +342,9 @@ CREATE TABLE message_notification (
     content VARCHAR(500) NOT NULL,
     read_status TINYINT NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_message_user_created (user_id, created_at, id),
+    KEY idx_message_user_read (user_id, read_status),
     CONSTRAINT fk_message_notification_user FOREIGN KEY (user_id) REFERENCES app_user(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE report_record (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    reporter_user_id BIGINT NOT NULL,
-    target_type VARCHAR(30) NOT NULL,
-    target_id BIGINT NOT NULL,
-    reason VARCHAR(255) NOT NULL,
-    process_status TINYINT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_report_record_user FOREIGN KEY (reporter_user_id) REFERENCES app_user(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE sys_admin_user (

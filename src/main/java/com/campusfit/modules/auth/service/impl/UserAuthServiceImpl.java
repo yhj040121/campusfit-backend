@@ -138,8 +138,8 @@ public class UserAuthServiceImpl implements UserAuthService {
             """
             insert into user_profile (
                 user_id, school_name, grade_name, signature, gender, email, location_name, avatar_text, avatar_class,
-                like_count, follower_count, following_count, created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, now(), now())
+                created_at, updated_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
             """,
             userId,
             normalize(request.schoolName()),

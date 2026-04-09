@@ -1,6 +1,5 @@
 package com.campusfit.modules.announcement.service.impl;
 
-import com.campusfit.common.exception.BusinessException;
 import com.campusfit.modules.announcement.service.AnnouncementService;
 import com.campusfit.modules.announcement.vo.AnnouncementVO;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,19 +39,6 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         return items.isEmpty() ? null : items.get(0);
     }
 
-    @Override
-    public AnnouncementVO getPublishedDetail(Long announcementId) {
-        List<AnnouncementVO> items = jdbcTemplate.query(
-            publishedAnnouncementHistorySelect() + " and id = ? limit 1",
-            (rs, rowNum) -> mapAnnouncement(rs),
-            announcementId
-        );
-        if (items.isEmpty()) {
-            throw new BusinessException("公告不存在或尚未发布");
-        }
-        return items.get(0);
-    }
-
     private String publishedAnnouncementHistorySelect() {
         return """
             select
@@ -76,7 +62,7 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     private AnnouncementVO mapAnnouncement(ResultSet rs) throws SQLException {
         return new AnnouncementVO(
             rs.getLong("id"),
-            coalesce(rs.getString("badge_label"), "官方公告"),
+            coalesce(rs.getString("badge_label"), "瀹樻柟鍏憡"),
             rs.getString("title"),
             rs.getString("summary"),
             coalesce(rs.getString("content"), rs.getString("summary")),

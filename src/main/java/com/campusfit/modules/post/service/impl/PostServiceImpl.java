@@ -500,44 +500,6 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
-    @Transactional
-    public void shelfDownMine(String postId) {
-        long currentUserId = UserAuthContext.requireUserId();
-        PostMeta meta = resolvePostMeta(postId);
-        if (meta.authorUserId() != currentUserId) {
-            throw new BusinessException("只能下架自己发布的穿搭内容");
-        }
-        if (meta.auditStatus() != 1) {
-            throw new BusinessException("当前内容未通过审核，暂时不能下架");
-        }
-        if (meta.status() == 0) {
-            throw new BusinessException("当前内容已处于下架状态");
-        }
-        jdbcTemplate.update("update post set status = 0, updated_at = now() where id = ?", meta.id());
-        jdbcTemplate.update("update product_link set link_status = 0 where post_id = ?", meta.id());
-        cooperationService.syncProgressByCooperationId(meta.cooperationId());
-    }
-
-    @Override
-    @Transactional
-    public void restoreMine(String postId) {
-        long currentUserId = UserAuthContext.requireUserId();
-        PostMeta meta = resolvePostMeta(postId);
-        if (meta.authorUserId() != currentUserId) {
-            throw new BusinessException("只能操作自己发布的穿搭内容");
-        }
-        if (meta.auditStatus() != 1) {
-            throw new BusinessException("审核中的内容或已驳回内容暂时不能重新上架");
-        }
-        if (meta.status() == 1) {
-            throw new BusinessException("当前内容已是上架状态");
-        }
-        jdbcTemplate.update("update post set status = 1, updated_at = now() where id = ?", meta.id());
-        jdbcTemplate.update("update product_link set link_status = 1 where post_id = ?", meta.id());
-        cooperationService.syncProgressByCooperationId(meta.cooperationId());
-    }
-
-    @Override
     public List<PostCommentVO> listComments(String postId) {
         Long currentUserId = UserAuthContext.getCurrentUserId();
         long viewerUserId = currentUserId == null ? -1L : currentUserId;
@@ -794,8 +756,6 @@ public class PostServiceImpl implements PostService {
             resolvePublishStatusText(publishStatus),
             resolvePublishStatusDesc(publishStatus),
             "PUBLISHED".equals(publishStatus),
-            "PUBLISHED".equals(publishStatus),
-            "OFFLINE".equals(publishStatus),
             deletePolicy.canDelete(),
             coalesce(deletePolicy.blockedReason(), "")
         );
@@ -1111,12 +1071,12 @@ public class PostServiceImpl implements PostService {
         if (productLink == null) {
             if (exists != null && exists > 0) {
                 jdbcTemplate.update(
-                    """
-                    update product_link
-                    set product_name = ?, platform_name = ?, product_url = '', link_status = 0,
-                        price_amount = 0.00, profit_label = ?, guide_tip = ?, last_checked_at = now()
-                    where post_id = ?
-                    """,
+                """
+                update product_link
+                set product_name = ?, platform_name = ?, product_url = '', link_status = 0,
+                    price_amount = 0.00, profit_label = ?, guide_tip = ?
+                where post_id = ?
+                """,
                     productName,
                     "外部平台",
                     DEFAULT_INCENTIVE_TIP,
@@ -1132,7 +1092,7 @@ public class PostServiceImpl implements PostService {
                 """
                 update product_link
                 set product_name = ?, platform_name = ?, product_url = ?, link_status = 1,
-                    price_amount = ?, profit_label = ?, guide_tip = ?, last_checked_at = now()
+                    price_amount = ?, profit_label = ?, guide_tip = ?
                 where post_id = ?
                 """,
                 productName,
@@ -1149,8 +1109,8 @@ public class PostServiceImpl implements PostService {
             """
             insert into product_link (
                 post_id, product_name, platform_name, product_url, link_status,
-                is_partner_product, commission_rate, price_amount, profit_label, guide_tip, last_checked_at, created_at
-            ) values (?, ?, ?, ?, 1, 0, 5.00, ?, ?, ?, now(), now())
+                price_amount, profit_label, guide_tip, created_at
+            ) values (?, ?, ?, ?, 1, ?, ?, ?, now())
             """,
             postId,
             productName,
@@ -1695,6 +1655,4 @@ public class PostServiceImpl implements PostService {
     ) {
     }
 }
-
-
 
